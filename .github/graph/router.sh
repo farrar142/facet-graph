@@ -156,6 +156,8 @@ specs=$(ls specs/features/*/spec.md 2>/dev/null | wc -l)
 node_runs=$(for s in queued in_progress waiting pending; do gh run list --repo "$REPO" --status $s --limit 50 --json workflowName --jq '.[].workflowName'; done | grep '^graph-' | grep -vc '^graph-router$' || true)
 if [ "$ACTIVE" -eq 0 ] && [ "$node_runs" -eq 0 ] && [ "$open_work" -eq 0 ] && [ "$specs" -gt 0 ] && [ "$(echo "$prs_json" | jq length)" -eq 0 ]; then
   ln=$(gh issue list --repo "$REPO" --label budget-ledger --state all --limit 1 --json number --jq '.[0].number')
+  # A trial whose ledger has no run yet has not started (a new ledger is opened before the requirement).
+  [ "$(bash "$GRAPH_DIR/ledger.sh" total)" = "0.0000" ] && ln=
   if [ -n "$ln" ] && ! gh api "repos/$REPO/issues/$ln/comments" --paginate --jq '.[].body' | grep -q '<!-- graph-finished -->'; then
     gh issue comment "$ln" --repo "$REPO" --body "<!-- graph-finished --> 열린 일이 없다. 총비용 \$$(bash "$GRAPH_DIR/ledger.sh" total)." >/dev/null
     echo "graph finished"
