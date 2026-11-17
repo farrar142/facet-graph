@@ -21,9 +21,9 @@ pub struct List {
 }
 
 impl List {
-    /// 넘길 수 있는 가장 먼 거리.
+    /// 넘길 수 있는 가장 먼 거리. 목록 끝에는 빈 곳 한 행 높이가 늘 있다(`ui/app.slint`의 목록 내용 높이).
     pub fn max_scroll(&self) -> f32 {
-        (self.rows as f32 * self.row_height - self.height).max(0.0)
+        ((self.rows + 1) as f32 * self.row_height - self.height).max(0.0)
     }
 }
 
@@ -184,6 +184,12 @@ mod tests {
         row_height: 24.0,
         rows: 100,
     };
+
+    #[test]
+    fn 끝까지_넘기면_빈_곳_한_행이_보인다() {
+        // 100행 × 24 = 2400, 빈 곳 한 행을 더해 2424, 보이는 높이 240.
+        assert_eq!(LIST.max_scroll(), 2424.0 - 240.0);
+    }
 
     fn at(x: f32, y: f32) -> Point {
         Point { x, y }

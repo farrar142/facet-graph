@@ -1736,6 +1736,8 @@ component PanelView inherits Rectangle {
             list := ListView {
                 y: 0;
                 height: floor(parent.height / root.row-height) * root.row-height;
+                // 내용 높이에 빈 곳 한 행 높이를 더한다: 꽉 찬 목록도 끝까지 넘기면 아래 빈 곳 TouchArea가 닿는다.
+                content-height: root.rows.length * root.row-height + root.row-height;
                 for row[i] in root.rows: Rectangle {
                     height: root.row-height;
                     background: row.selected ? Palette.selection-background : transparent;
