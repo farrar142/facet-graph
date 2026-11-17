@@ -82,12 +82,18 @@ fn back_forward_and_up_from_the_background_menu() {
     let dir = tree();
     let mut app = app_inside_a(dir.path());
 
-    assert!(!row_enabled(&mut app, CommandId::Forward), "앞으로 갈 기록이 없다");
+    assert!(
+        !row_enabled(&mut app, CommandId::Forward),
+        "앞으로 갈 기록이 없다"
+    );
     assert_eq!(click(&mut app, CommandId::Back), Execution::Done);
     app.wait(WAIT).expect("읽기");
     assert_eq!(location(&app), Location::file_system(dir.path()));
 
-    assert!(row_enabled(&mut app, CommandId::Forward), "앞으로 갈 기록이 생겼다");
+    assert!(
+        row_enabled(&mut app, CommandId::Forward),
+        "앞으로 갈 기록이 생겼다"
+    );
     assert_eq!(click(&mut app, CommandId::Forward), Execution::Done);
     app.wait(WAIT).expect("읽기");
     assert_eq!(location(&app), Location::file_system(dir.path().join("a")));
@@ -114,7 +120,10 @@ fn undo_from_the_background_menu() {
         Execution::UndoRefused(UndoError::NotUndoable(NotUndoable::PermanentDelete)),
         "메뉴 줄도 실행취소 길을 탄다"
     );
-    assert!(app.work_area().is_empty(), "되돌릴 수 없는 기록은 작업을 만들지 않는다");
+    assert!(
+        app.work_area().is_empty(),
+        "되돌릴 수 없는 기록은 작업을 만들지 않는다"
+    );
 }
 
 #[test]
@@ -123,7 +132,10 @@ fn split_and_merge_panels_from_the_background_menu() {
     let mut app = app_at(dir.path());
     assert_eq!(app.active_window().panels().len(), 1);
 
-    assert_eq!(click(&mut app, CommandId::TogglePanelSplit), Execution::Done);
+    assert_eq!(
+        click(&mut app, CommandId::TogglePanelSplit),
+        Execution::Done
+    );
     assert_eq!(app.active_window().panels().len(), 2);
     assert_eq!(app.active_window().active_panel_index(), 1);
 
