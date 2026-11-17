@@ -78,7 +78,7 @@ use crate::indexer_client::{ClientOptions, Connection, IndexerClient, IndexerEve
 use crate::instant_search::{DemotionReason, Follow};
 use crate::job::{
     AnswerError, ConflictAnswer, CopyRejection, DeleteRejection, ErrorAnswer, JobEvent, JobId,
-    JobKind, JobQueue, JournalSink, NotRecyclableAnswer, RevertJob,
+    JobKind, JobQueue, JournalSink, NotRecyclableAnswer, RenameItem, RevertJob,
 };
 use crate::launch::LaunchTarget;
 use crate::live_search::{LiveSearch, StartError};
@@ -2814,7 +2814,11 @@ impl App {
             JobKind::Copy => CommandId::CopyTo,
             JobKind::Move => CommandId::MoveTo,
             // 실행취소·다시 실행은 원본을 골라 넣는 작업이 아니다.
-            JobKind::Undo | JobKind::Redo | JobKind::Delete | JobKind::Recycle => return None,
+            JobKind::Undo
+            | JobKind::Redo
+            | JobKind::Delete
+            | JobKind::Recycle
+            | JobKind::BatchRename => return None,
         };
         if !self.can_execute(command) {
             return None;
@@ -2979,6 +2983,28 @@ impl App {
         Ok(id)
     }
 
+    /// **일괄 이름 바꾸기** 작업을 작업 대기열에 넣어 곧바로 시작하고([`JobQueue::batch_rename`]: 차례를 기다리지
+    /// 않음, 전부 아니면 전무) 작업 영역에 더한다([`JobKind::BatchRename`], 대상 자리에는 첫 항목의 폴더, 원본 수는
+    /// 바꿀 항목 수). `items`는 바뀌는 항목만, `unchanged`는 규칙이 바꾸지 않아 건너뛴 항목 수다. 규칙·미리 보기를
+    /// 거쳐 부르는 입구는 이 위에 선다. 진행·취소·끝남은 다른 작업과 같고 [`App::poll_jobs`]가 받는다.
+    ///
+    /// 끝나면([`crate::job::JobState::Finished`]) 작업 기록에 기록 **하나**([`OperationKind::BatchRename`], 바꾼 항목마다
+    /// [`crate::history::Step::Renamed`], 건너뛴 수 `unchanged`)로 남는다. 실패·취소로 모두 되돌렸으면 남지 않고,
+    /// 되돌리기마저 실패해 바뀐 채 남은 항목이 있으면 그 항목만 남는다. 바뀐 항목은 검색 결과 탭에도 반영된다.
+    pub fn submit_batch_rename(&mut self, items: Vec<RenameItem>, unchanged: u64) -> JobId {
+        let target = items
+            .first()
+            .map(|item| item.folder.clone())
+            .unwrap_or_default();
+        let count = items.len();
+        let (id, journal) = self.jobs.batch_rename_recorded(items, unchanged);
+        self.journals
+            .insert(id, (OperationKind::BatchRename, journal));
+        self.work_area.add(id, JobKind::BatchRename, target, count);
+        self.poll_jobs();
+        id
+    }
+
     /// 고른 항목들을 **삭제**한다(Delete): 모두 휴지통이 없는 위치에 있으면([`crate::job::deletes_permanently`])
     /// 영구 삭제 작업([`App::delete_permanently`]), 아니면 휴지통 삭제 작업([`App::recycle`])이다. 영구 삭제가 될
     /// 때 실행 전에 「영구 삭제됩니다」를 알리고 확인받는 것은 화면 몫이다(같은 함수로 미리 안다).
@@ -3060,6 +3086,13 @@ impl App {
                 .steps
                 .iter()
                 .any(|step| matches!(step, crate::history::Step::Recycled { .. }));
+        if kind == OperationKind::BatchRename {
+            self.history.record(Record::batch_rename(
+                journal.steps,
+                summary.names_unchanged,
+            ));
+            return;
+        }
         let record = if kind == OperationKind::Delete || all_deleted {
             // 영구 삭제(휴지통에 보낸 것 없이 모두 영구 삭제로 진행한 휴지통 삭제 포함): 되살릴 것이 남지 않는다.
             // 항목별 결과는 넘긴 원본뿐이라 지운 항목 수를 따로 준다.
@@ -3144,7 +3177,12 @@ impl App {
         let outcomes = Outcomes::default();
         let job = self
             .jobs
-            .revert(RevertJob::new(reversal, steps, Arc::clone(&outcomes)));
+            .revert(RevertJob::new(
+                reversal,
+                record.kind(),
+                steps,
+                Arc::clone(&outcomes),
+            ));
         self.history.begin(reversal, job, outcomes);
         let kind = match reversal {
             Reversal::Undo => JobKind::Undo,

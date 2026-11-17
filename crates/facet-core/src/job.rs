@@ -30,6 +30,7 @@
 //! 미리 안다. 삭제와 실행취소·다시 실행은 대기열의 작업이지만 차례를 기다리지 않고 넣자마자 시작한다(「지금 시작」과
 //! 같은 길).
 
+mod batch_rename;
 mod copy;
 mod delete;
 mod moving;
@@ -46,6 +47,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
+pub use batch_rename::RenameItem;
 pub use facet_win::file_ops::FileOpErrorKind;
 pub use recycle::RECYCLE_CHUNK;
 
@@ -86,6 +88,8 @@ pub enum JobKind {
     Delete,
     /// **휴지통 삭제**([`JobQueue::recycle`]). 차례를 기다리지 않고 곧바로 시작한다.
     Recycle,
+    /// **일괄 이름 바꾸기**([`JobQueue::batch_rename`]). 차례를 기다리지 않고 곧바로 시작한다.
+    BatchRename,
 }
 
 /// 작업의 상태.
@@ -210,6 +214,9 @@ pub struct Summary {
     /// 보낸 옛 파일, 휴지통 삭제가 보낸 항목(넘긴 원본마다 하나, 폴더면 그 폴더 하나)과 그 다시 실행이 다시 보낸
     /// 항목. 휴지통을 거치지 않은 덮어쓰기·삭제는 들지 않는다.
     pub recycled: Vec<facet_win::recycle::RecycledItem>,
+    /// 일괄 이름 바꾸기가 규칙이 이름을 바꾸지 않아 건너뛴 항목 수([`Summary::items_skipped`]에 든다). 다른 작업은
+    /// 늘 0이다.
+    pub names_unchanged: u64,
 }
 
 impl Summary {
@@ -219,12 +226,14 @@ impl Summary {
     }
 
     /// 건너뛴 항목 수: 이름 충돌로 건너뛴 것, 항목별 오류로 건너뛴 것(폴더면 그 폴더 하나로 센다), 실행취소·다시
-    /// 실행이 밖의 변경으로 건너뛴 것, 휴지통 삭제가 휴지통에 들어가지 않아 남긴 것.
+    /// 실행이 밖의 변경으로 건너뛴 것, 휴지통 삭제가 휴지통에 들어가지 않아 남긴 것, 일괄 이름 바꾸기가 규칙이 바꾸지
+    /// 않아 건너뛴 것.
     pub fn items_skipped(&self) -> u64 {
         self.conflicts_skipped
             + self.errors_skipped()
             + self.not_reverted.len() as u64
             + self.not_recycled.len() as u64
+            + self.names_unchanged
     }
 
     /// 끝낸 항목 수: 처리한 항목([`Summary::items_done`]) 가운데 건너뛰지 않은 것.
@@ -456,6 +465,7 @@ enum Job {
     Revert(revert::RevertJob),
     Delete(delete::DeleteJob),
     Recycle(recycle::RecycleJob),
+    BatchRename(batch_rename::BatchRenameJob),
 }
 
 impl Job {
@@ -467,6 +477,7 @@ impl Job {
             Job::Revert(job) => job.root_count(),
             Job::Delete(job) => job.root_count(),
             Job::Recycle(job) => job.root_count(),
+            Job::BatchRename(job) => job.root_count(),
         }
     }
 
@@ -478,6 +489,7 @@ impl Job {
             Job::Revert(job) => job.run(context),
             Job::Delete(job) => job.run(context),
             Job::Recycle(job) => job.run(context),
+            Job::BatchRename(job) => job.run(context),
         }
     }
 }
@@ -911,7 +923,11 @@ impl JobQueue {
         match kind {
             JobKind::Copy => self.copy(sources, target),
             JobKind::Move => self.move_items(sources, target),
-            JobKind::Undo | JobKind::Redo | JobKind::Delete | JobKind::Recycle => {
+            JobKind::Undo
+            | JobKind::Redo
+            | JobKind::Delete
+            | JobKind::Recycle
+            | JobKind::BatchRename => {
                 Err(CopyRejection::NoSources)
             }
         }
@@ -937,7 +953,11 @@ impl JobQueue {
                 job.plan.journal = Some(Arc::clone(&journal));
                 Job::Move(job)
             }
-            JobKind::Undo | JobKind::Redo | JobKind::Delete | JobKind::Recycle => {
+            JobKind::Undo
+            | JobKind::Redo
+            | JobKind::Delete
+            | JobKind::Recycle
+            | JobKind::BatchRename => {
                 return Err(CopyRejection::NoSources);
             }
         };
@@ -1027,7 +1047,40 @@ impl JobQueue {
         Ok((self.start_at_once(Job::Recycle(job)), journal))
     }
 
-    /// 작업을 넣고 차례를 기다리지 않고 곧바로 시작한다(실행취소·다시 실행, 삭제).
+    /// 항목들의 이름을 같은 폴더 안에서 한꺼번에 바꾸는 **일괄 이름 바꾸기** 작업을 넣고 차례를 기다리지 않고 곧바로
+    /// 시작한다(삭제와 같은 까닭과 길: 이름 바꾸기는 디스크를 거의 쓰지 않는다). `items`는 바뀌는 항목만(넘긴 차례가
+    /// 작업 기록의 차례), `unchanged`는 규칙이 바꾸지 않아 건너뛴 항목 수다([`Summary::names_unchanged`]).
+    ///
+    /// **전부 아니면 전무**다. 아무것도 바꾸기 전에 디스크에서 원본이 있는지, 새 이름 자리에 이 작업이 비우지 않을
+    /// 다른 항목이 없는지(대소문자 무시, 대소문자만 바꾸는 이름은 같은 항목) 보고, 걸리면 아무것도 바꾸지 않고 그
+    /// 항목들을 [`Summary::failures`](`SourceMissing`·`TargetExists`)에 담아 [`JobState::Failed`]로 끝난다. 사슬·
+    /// 맞바꿈·대소문자만 바꾸기는 같은 폴더 안 임시 이름을 거친다. 일시정지·취소는 이름 바꾸기 사이에서 듣고, 항목별
+    /// 오류 질문은 하지 않는다. 바꾸는 중 실패하거나 취소하면 바꾼 항목을 모두 되돌리고 [`JobState::Failed`]
+    /// (실패한 항목은 [`Summary::failures`])·[`JobState::Cancelled`]로 끝난다. 진행은 항목 수(`unchanged` 포함)다.
+    ///
+    /// 끝나면([`JobState::Finished`]) [`Summary::items_renamed`]가 바꾼 수, [`Summary::items_done`]이 바꾼 수와
+    /// `unchanged`의 합이다.
+    pub fn batch_rename(&mut self, items: Vec<RenameItem>, unchanged: u64) -> JobId {
+        self.start_at_once(Job::BatchRename(batch_rename::BatchRenameJob::new(
+            items, unchanged,
+        )))
+    }
+
+    /// 일괄 이름 바꾸기 작업을 넣어 곧바로 시작하고([`JobQueue::batch_rename`]와 같다) 그 작업이 한 일을 적을 곳을
+    /// 함께 돌려준다(작업 기록에 남길 작업). 끝나면 바뀐 채 있는 항목마다 [`crate::history::Step::Renamed`]가 넘긴
+    /// 차례대로 든다(모두 되돌렸으면 비어 있다).
+    pub(crate) fn batch_rename_recorded(
+        &mut self,
+        items: Vec<RenameItem>,
+        unchanged: u64,
+    ) -> (JobId, JournalSink) {
+        let journal = JournalSink::default();
+        let mut job = batch_rename::BatchRenameJob::new(items, unchanged);
+        job.journal = Some(Arc::clone(&journal));
+        (self.start_at_once(Job::BatchRename(job)), journal)
+    }
+
+    /// 작업을 넣고 차례를 기다리지 않고 곧바로 시작한다(실행취소·다시 실행, 삭제, 일괄 이름 바꾸기).
     fn start_at_once(&mut self, job: Job) -> JobId {
         let id = self.enqueue(job);
         self.start_now(id);
