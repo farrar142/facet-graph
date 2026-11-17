@@ -3087,10 +3087,8 @@ impl App {
                 .iter()
                 .any(|step| matches!(step, crate::history::Step::Recycled { .. }));
         if kind == OperationKind::BatchRename {
-            self.history.record(Record::batch_rename(
-                journal.steps,
-                summary.names_unchanged,
-            ));
+            self.history
+                .record(Record::batch_rename(journal.steps, summary.names_unchanged));
             return;
         }
         let record = if kind == OperationKind::Delete || all_deleted {
@@ -3175,14 +3173,12 @@ impl App {
             .unwrap_or_default();
         let count = steps.len();
         let outcomes = Outcomes::default();
-        let job = self
-            .jobs
-            .revert(RevertJob::new(
-                reversal,
-                record.kind(),
-                steps,
-                Arc::clone(&outcomes),
-            ));
+        let job = self.jobs.revert(RevertJob::new(
+            reversal,
+            record.kind(),
+            steps,
+            Arc::clone(&outcomes),
+        ));
         self.history.begin(reversal, job, outcomes);
         let kind = match reversal {
             Reversal::Undo => JobKind::Undo,

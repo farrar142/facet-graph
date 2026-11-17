@@ -927,9 +927,7 @@ impl JobQueue {
             | JobKind::Redo
             | JobKind::Delete
             | JobKind::Recycle
-            | JobKind::BatchRename => {
-                Err(CopyRejection::NoSources)
-            }
+            | JobKind::BatchRename => Err(CopyRejection::NoSources),
         }
     }
 

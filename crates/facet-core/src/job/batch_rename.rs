@@ -113,13 +113,19 @@ impl BatchRenameJob {
             }
             Err(stop) => {
                 if let Stop::Failed { path, kind } = stop {
-                    engine.summary.failures.push(ItemFailure { source: path, kind });
+                    engine
+                        .summary
+                        .failures
+                        .push(ItemFailure { source: path, kind });
                 } else {
                     engine.cancelled = true;
                 }
                 // 모두 되돌린다. 되돌리지 못한 항목은 지금 경로로 실패에 더한다.
                 for (path, kind) in roll_back(&mut current, &sources) {
-                    engine.summary.failures.push(ItemFailure { source: path, kind });
+                    engine
+                        .summary
+                        .failures
+                        .push(ItemFailure { source: path, kind });
                 }
                 engine.reporter.items_done = 0;
                 engine.summary.items_renamed = 0;

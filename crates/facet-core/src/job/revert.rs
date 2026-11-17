@@ -277,12 +277,18 @@ impl RevertJob {
             Err(stop) => {
                 match stop {
                     super::batch_rename::Stop::Failed { path, kind } => {
-                        copier.summary.failures.push(ItemFailure { source: path, kind });
+                        copier
+                            .summary
+                            .failures
+                            .push(ItemFailure { source: path, kind });
                     }
                     super::batch_rename::Stop::Cancelled => copier.cancelled = true,
                 }
                 for (path, kind) in super::batch_rename::roll_back(&mut current, &originals) {
-                    copier.summary.failures.push(ItemFailure { source: path, kind });
+                    copier
+                        .summary
+                        .failures
+                        .push(ItemFailure { source: path, kind });
                 }
                 // 되돌리지 못하고 반대편 자리에 놓인 항목은 그쪽 목록으로 보낸다(기록과 디스크가 어긋나지 않게).
                 if let Ok(mut slots) = self.outcomes.lock() {
