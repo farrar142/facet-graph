@@ -178,9 +178,12 @@ fn new_rows_are_disabled_not_hidden_when_they_cannot_run() {
     );
 }
 
+/// 맥락의 새 필드 하나를 끄는 함수.
+type TurnOff = fn(&mut MenuContext);
+
 #[test]
 fn each_flag_drives_only_its_own_row() {
-    let cases: [(fn(&mut MenuContext), CommandId); 4] = [
+    let cases: [(TurnOff, CommandId); 4] = [
         (|c| c.can_go_back = false, CommandId::Back),
         (|c| c.can_go_forward = false, CommandId::Forward),
         (|c| c.can_go_up = false, CommandId::Up),
