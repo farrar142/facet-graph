@@ -51,6 +51,9 @@ const USAGE: &str = "\
   facet-bench menu [--runs N] [--limit-ms N]
       항목 1만 개 시험 폴더에서 1만 개를 선택한 상태로 오른쪽 메뉴(항목 메뉴·빈 곳 메뉴)를 만드는 시간을 각각
       N회(기본 5) 재어 중앙값이 상한(기본 10ms)을 넘으면 실패한다.
+  facet-bench batch-rename [--runs N] [--limit-ms N]
+      항목 1만 개 시험 폴더에서 1만 개를 선택하고 찾아 바꾸기·앞·뒤 붙이기·번호를 모두 쓴 규칙으로 일괄 이름 바꾸기
+      미리 보기를 만드는 시간을 N회(기본 5) 재어 중앙값이 상한(기본 160ms)을 넘으면 실패한다.
   facet-bench query-syntax [--runs N] [--limit-ms N]
       연산자·조건을 고루 쓴 긴 질의 하나를 해석하는 시간을 N회(기본 5) 재어 중앙값이 상한(기본 10ms)을 넘으면
       실패한다.
@@ -208,6 +211,7 @@ fn main() -> ExitCode {
         "session" => session(&args),
         "clipboard" => clipboard(&args),
         "menu" => menu(&args),
+        "batch-rename" => batch_rename(&args),
         "filter" => filter(&args),
         "query-syntax" => query_syntax(&args),
         "search" => live_search(&args),
@@ -603,6 +607,37 @@ fn menu(args: &Args) -> Result<(), String> {
         );
     }
     facet_bench::check_menu_limit(&m, limit)?;
+    println!("  상한 안: 통과");
+    Ok(())
+}
+
+fn batch_rename(args: &Args) -> Result<(), String> {
+    if args.path.is_some() {
+        return Err(format!(
+            "batch-rename 명령은 경로를 받지 않습니다
+
+{USAGE}"
+        ));
+    }
+    warn_debug();
+    let limit = args.limit.unwrap_or(facet_bench::BATCH_RENAME_LIMIT);
+    let m = facet_bench::measure_batch_rename(args.runs())?;
+    let t = &m.preview;
+    println!(
+        "일괄 이름 바꾸기 미리 보기 (선택 {}개, 바뀜 {}개, {}회):",
+        facet_bench::BATCH_RENAME_SELECTED,
+        m.rename_count,
+        t.times.len()
+    );
+    print_times(t);
+    println!(
+        "  중앙값 {:.3}ms, 최악 {:.3}ms / 로컬 기준 {}ms, CI 상한 {}ms",
+        ms(t.median()),
+        ms(t.max()),
+        facet_bench::BATCH_RENAME_TARGET.as_millis(),
+        limit.as_millis()
+    );
+    facet_bench::check_batch_rename_limit(&m, limit)?;
     println!("  상한 안: 통과");
     Ok(())
 }
