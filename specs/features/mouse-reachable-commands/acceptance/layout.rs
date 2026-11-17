@@ -232,7 +232,7 @@ fn new_rows_have_no_mark() {
 }
 
 #[test]
-fn item_menu_is_unchanged() {
+fn item_menu_is_unchanged_by_the_new_fields() {
     use CommandId::*;
     let mut c = context(MenuKind::Item);
     c.selected_count = 1;
@@ -252,6 +252,7 @@ fn item_menu_is_unchanged() {
         Row::Command(MoveTo),
         Row::Separator,
         Row::Command(Rename),
+        Row::Command(BatchRename),
         Row::Command(Delete),
     ];
     assert_eq!(rows(&build(&c)), expected);

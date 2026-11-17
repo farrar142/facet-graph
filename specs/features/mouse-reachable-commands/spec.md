@@ -91,7 +91,7 @@ pub struct MenuContext {
 - `Search`, `TogglePanelSplit` = 늘 `true`(명령 규칙과 같음: `CommandId::is_enabled`가 늘 참이고 창이 있으면 `App::can_execute`도 참).
 - 새 줄의 `mark`는 모두 `Mark::None`.
 
-기존 줄의 켜짐·표시 규칙, 항목 메뉴(`MenuKind::Item`)의 순서·켜짐, 검색 결과 위치의 머리 줄은 바뀌지 않는다.
+기존 줄의 켜짐·표시 규칙, 항목 메뉴(`MenuKind::Item`)의 순서·켜짐, 검색 결과 위치의 머리 줄은 이 스펙이 바꾸지 않는다(항목 메뉴의 순서는 뒤의 `batch-rename` 스펙이 `BatchRename` 줄을 더해 16줄로 바꿨다, R-0013.8).
 
 ### 기존 테스트·코드의 맞춤(Dev 몫)
 
@@ -112,7 +112,7 @@ pub struct MenuContext {
 - AC-3: 빈 곳 메뉴에 `CommandId::TogglePanelSplit` 줄이 있고, 그 줄의 명령을 실행하면 패널이 하나일 때 둘로 나뉘고 둘일 때 하나로 합쳐진다. (R-0001.3)
 - AC-4: 빈 곳 메뉴에 `CommandId::Search` 줄이 늘 켜져 있고, 그 줄의 명령을 실행하면 `Execution::Search`가 돌아온다. (R-0001.4)
 - AC-5: 빈 곳 메뉴에 `CommandId::Paste`·`NewFolder` 줄이 그대로 있고 기존 빈 곳 항목(붙여넣기·새 폴더·정렬 기준·숨김 항목 보이기·새로 고침·경로 복사)이 모두 기존 차례대로 남으며, 새 폴더 줄의 명령을 실행하면 `Execution::NewFolder`가 돌아온다. (R-0001.5)
-- AC-6: 빈 곳 메뉴는 맥락(선택 수·패널 수·클립보드·위치 종류·`can_go_back`·`can_go_forward`·`can_go_up`·`can_undo`)과 상관없이 Contract의 16줄 순서이고, 새 줄은 할 수 없을 때 빠지지 않고 `enabled == false`로 남으며, 뒤로·앞으로·위로·실행취소 줄의 켜짐은 각각 `can_go_back`·`can_go_forward`·`can_go_up`·`can_undo`만 따르고 검색·패널 나누기/합치기 줄은 늘 켜지며, 새 줄의 표시는 모두 `Mark::None`이다. 항목 메뉴(`MenuKind::Item`)의 순서는 새 필드와 상관없이 그대로다(검색 결과 위치의 「폴더에서 보기」 머리 포함). (R-0001.6)
+- AC-6: 빈 곳 메뉴는 맥락(선택 수·패널 수·클립보드·위치 종류·`can_go_back`·`can_go_forward`·`can_go_up`·`can_undo`)과 상관없이 Contract의 16줄 순서이고, 새 줄은 할 수 없을 때 빠지지 않고 `enabled == false`로 남으며, 뒤로·앞으로·위로·실행취소 줄의 켜짐은 각각 `can_go_back`·`can_go_forward`·`can_go_up`·`can_undo`만 따르고 검색·패널 나누기/합치기 줄은 늘 켜지며, 새 줄의 표시는 모두 `Mark::None`이다. 항목 메뉴(`MenuKind::Item`)의 순서는 새 필드와 상관없이 같다(검색 결과 위치의 「폴더에서 보기」 머리 포함): 그 순서는 `batch-rename` 스펙이 `Rename` 바로 아래 `BatchRename`을 더한 16줄이다. (R-0001.6)
 - AC-7: 앱의 빈 곳 메뉴(`App::context_menu(MenuKind::Background)`)의 모든 명령 줄의 `enabled`가 `App::can_execute(그 명령)`과 같다(새 기록 없음·뒤로 갈 기록 있음·앞으로 갈 기록 있음·실행취소 대상 있음·패널 둘 상태에서). (R-0001.6)
 - AC-8: 새로 더한 명령 여섯(`Back`·`Forward`·`Up`·`Undo`·`TogglePanelSplit`·`Search`)은 모두 기본 단축키가 하나 이상 있다(`CommandId::shortcuts`가 비지 않음). (R-0001.7)
 - AC-9: 오른쪽 메뉴 줄 옆에 그 명령의 첫 기본 단축키 글자가 보인다: 뒤로 Backspace, 앞으로 Alt+→, 위로 Alt+↑, 실행취소 Ctrl+Z, 검색 Ctrl+F, 패널 나누기/합치기 Ctrl+\(팔레트와 같은 글자). (R-0001.7)
@@ -122,7 +122,7 @@ pub struct MenuContext {
 
 ## E2E Tests
 
-- `acceptance/layout.rs` → `crates/facet-core/tests/spec_mouse_reachable_commands_layout.rs`: AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-8 (순수 `menu::build`: 16줄 순서, 기존 항목 차례, 맥락을 바꿔도 같은 순서, 새 필드에 따른 켜짐·꺼짐, 항목 메뉴 불변, 새 명령의 기본 단축키).
+- `acceptance/layout.rs` → `crates/facet-core/tests/spec_mouse_reachable_commands_layout.rs`: AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-8 (순수 `menu::build`: 16줄 순서, 기존 항목 차례, 맥락을 바꿔도 같은 순서, 새 필드에 따른 켜짐·꺼짐, 새 필드와 상관없는 항목 메뉴(`batch-rename`의 16줄), 새 명령의 기본 단축키).
 - `acceptance/app.rs` → `crates/facet-core/tests/spec_mouse_reachable_commands_app.rs`: AC-1, AC-2, AC-3, AC-4, AC-5, AC-7, AC-10 (임시 폴더의 `App`: 메뉴 줄로 실행한 뒤로·앞으로·위로·패널 나누기/합치기·검색·새 폴더·실행취소, 메뉴 켜짐과 `App::can_execute`의 일치, 메뉴 실행과 단축키 실행의 결과 비교).
 - AC-12는 기존 벤치마크 `facet-bench menu`(`cargo xtask ci`의 오른쪽 메뉴 구성 벤치마크 단계)가 지킨다.
 
@@ -153,6 +153,6 @@ pub struct MenuContext {
 ## Out of Scope
 
 - 상시 도구 모음·리본·메뉴 막대, 탭 줄·머리글·주소창의 오른쪽 메뉴.
-- 항목 메뉴의 변경, 셸 항목.
+- 항목 메뉴의 변경(뒤에 `batch-rename` 스펙이 `BatchRename` 줄을 더함), 셸 항목.
 - 새 명령, 기본 단축키 변경, 새 화면 문장.
 - 그리드 보기, 터치 조작.

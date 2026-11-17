@@ -1,7 +1,7 @@
 ---
 feature: batch-rename
 requirement: R-0013
-requirement_version: 0540206ece3eea40
+requirement_version: 0e8b3e4bd0701480
 ---
 
 ## Problem Statement
@@ -154,7 +154,7 @@ pub enum BatchProblem {
 
 `BatchRename` 줄의 `enabled`는 `(location_is_folder || location_is_results) && selected_count >= 2`, `mark`는 `Mark::None`. `MenuContext`에 새 필드는 없다. 빈 곳 메뉴는 바뀌지 않는다.
 
-**기존 원장과의 관계**: 대표 답 1A에 따라 `mouse-reachable-commands`의 AC-6과 그 인수 시험 `item_menu_is_unchanged`(15줄 항목 메뉴를 못박음)는 Odin이 이 16줄 순서로 고친다. Dev는 `crates/facet-core/tests/menu.rs`의 항목 메뉴 순서 단언과 `crates/facet-app/src/context_menu.rs` 단위 테스트를 새 순서에 맞춘다.
+**기존 원장과의 관계**: 대표 답 1A에 따라 `mouse-reachable-commands`의 AC-6과 그 인수 시험(15줄 항목 메뉴를 못박던 `item_menu_is_unchanged`)은 Odin이 이 16줄 순서로 고쳤다(시험 이름은 `item_menu_is_unchanged_by_the_new_fields`). Dev는 고친 `specs/features/mouse-reachable-commands/acceptance/layout.rs`를 그 target `crates/facet-core/tests/spec_mouse_reachable_commands_layout.rs`에 글자 그대로 다시 옮기고, `crates/facet-core/tests/menu.rs`의 항목 메뉴 순서 단언과 `crates/facet-app/src/context_menu.rs` 단위 테스트를 새 순서에 맞춘다.
 
 ### 앱 상태 (`facet_core::window::App`)
 
@@ -222,10 +222,10 @@ pub enum BatchRenameError {
 - AC-8: 문제가 하나라도 있으면 `Preview::can_execute`가 거짓이고 `App::start_batch_rename`은 `Err(BatchRenameError::Problems)`를 돌려주며 작업을 만들지 않고 디스크·작업 기록이 그대로다. (R-0013.3)
 - AC-9: 다른 바뀌는 항목이 비우는 이름을 쓰는 것(사슬 `a→aa, aa→aaaa`, `aa→a, aaaa→aa`)과 대소문자만 바꾸는 것은 미리 보기에서 문제가 아니고, 실행하면 디스크에서 모두 바뀐다. (R-0013.5)
 - AC-10: 규칙이 이름을 바꾸지 않는 항목은 `Unchanged`이고 `unchanged_count`로 세며, 실행하면 그 항목은 디스크에서 그대로이고 결과 요약 `names_unchanged`·`items_skipped()`와 기록의 `items_skipped()`가 그 수다. 모두 그대로면 `can_execute`가 거짓이고 `start_batch_rename`은 `Err(NothingToRename)`이다. (R-0013.7)
-- AC-11: `App::start_batch_rename`은 `JobKind::BatchRename` 작업을 곧바로 시작해 작업 영역에 더하고, 끝나면 바뀌는 항목이 모두 새 이름이고 `items_completed()`가 바꾼 수다. (R-0013.1)
-- AC-12: 바꾸는 중 한 항목의 파일 연산이 실패하면(공유 없이 연 잠긴 파일) 작업은 `Failed`로 끝나고 `Summary::failures`에 그 항목이 들며 모든 항목이 원래 이름이고 작업 기록에 새 기록이 없다. (R-0013.4)
+- AC-11: `App::start_batch_rename`은 `JobKind::BatchRename` 작업을 곧바로 시작해 작업 영역에 더하고, 끝나면 바뀌는 항목이 모두 새 이름이고 `items_completed()`가 바꾼 수다. (R-0013.1, R-0013.10)
+- AC-12: 바꾸는 중 한 항목의 파일 연산이 실패하면(공유 없이 연 잠긴 파일) 작업은 `Failed`로 끝나고 `Summary::failures`에 그 항목이 들며 모든 항목이 원래 이름이고 작업 기록에 새 기록이 없다. (R-0013.4, R-0013.10)
 - AC-13: 실행 전 디스크 확인에서 새 이름 자리에 미리 보기가 몰랐던 항목이 있으면(검색 결과 위치) 아무것도 바꾸지 않고 `Failed`로 끝나며 `failures`의 까닭이 `TargetExists`다. (R-0013.4, R-0013.9)
-- AC-14: 일괄 이름 바꾸기 작업을 시작 직후 취소하면 끝난 상태가 `Cancelled`면 모든 항목이 원래 이름이고 기록이 없으며, `Finished`면 모든 항목이 새 이름이고 기록이 하나다(일부만 바뀐 상태는 없다). (R-0013.4)
+- AC-14: 일괄 이름 바꾸기 작업을 시작 직후 취소하면 끝난 상태가 `Cancelled`면 모든 항목이 원래 이름이고 기록이 없으며, `Finished`면 모든 항목이 새 이름이고 기록이 하나다(일부만 바뀐 상태는 없다). (R-0013.4, R-0013.10)
 - AC-15: 끝난 일괄 이름 바꾸기는 작업 기록에 `OperationKind::BatchRename` 기록 하나(바꾼 항목마다 `Step::Renamed`)로 남고, 실행취소 한 번으로 모든 항목이 원래 이름·내용·수정 시각으로 돌아가며, 다시 실행 한 번으로 모두 다시 새 이름이 된다. (R-0013.6)
 - AC-16: 실행취소할 때 한 항목이라도 밖에서 바뀌었으면(내용을 고침) 아무 항목도 되돌리지 않고 `Failed`로 끝나며 `not_reverted`에 그 항목이 `Changed`로 들고 기록은 실행취소 대상으로 남는다. (R-0013.6, R-0013.4)
 - AC-17: `CommandId::BatchRename`은 `CommandId::ALL`에 있고 id가 `"batch-rename"`이며 기본 단축키가 없고, 위치가 실제 폴더이거나 검색 결과 위치이며 두 항목 이상 선택했을 때만 켜지고(선택 0·1개, 커서만 있으면 꺼짐), 실행하면 `Execution::BatchRename`이다. (R-0013.8)
@@ -234,7 +234,7 @@ pub enum BatchRenameError {
 - AC-20: `App::batch_rename_items`는 선택만 목록 순서로 항목마다 제 폴더와 함께 주고, `App::batch_rename_preview`는 같은 폴더의 선택하지 않은 항목 이름과의 겹침을 `NameTaken`으로 낸다. (R-0013.2, R-0013.3)
 - AC-21: 선택 1만 개 미리 보기 계산(`App::batch_rename_preview`)은 `facet-bench batch-rename`의 CI 상한 `BATCH_RENAME_LIMIT`(160ms) 안이다. (R-0013.2)
 - AC-22: 앱의 일괄 이름 바꾸기 창은 규칙을 칠 때마다 항목마다 원래 이름과 바뀔 이름, 문제 줄의 까닭, 바꿈·건너뜀·문제 수를 보이고, 문제가 있거나 바꿀 것이 없으면 「바꾸기」가 꺼진다. (R-0013.2, R-0013.3, R-0013.7)
-- AC-23: 작업 영역에 「일괄 이름 바꾸기」 진행 표시와 「취소」가 보이고, 실행취소하면 상태 줄에 「일괄 이름 바꾸기(n개) 실행취소」가 보인다. (R-0013.4, R-0013.6)
+- AC-23: 작업 영역에 「일괄 이름 바꾸기」 진행 표시와 「취소」가 보이고, 실행취소하면 상태 줄에 「일괄 이름 바꾸기(n개) 실행취소」가 보인다. (R-0013.4, R-0013.6, R-0013.10)
 
 ## E2E Tests
 

@@ -186,7 +186,7 @@ fn command_menu_and_palette_agree_on_when_it_is_enabled() {
         }
     };
     let palette_enabled = |app: &App| {
-        app.search_commands("일괄", &name)
+        app.search_commands("일괄", name)
             .iter()
             .find(|e| e.command == CommandId::BatchRename)
             .expect("팔레트에서 찾아진다")
