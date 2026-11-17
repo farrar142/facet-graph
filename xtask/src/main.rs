@@ -1,7 +1,7 @@
 //! 저장소 작업 명령. `cargo xtask <명령>`으로 부른다.
 //!
 //! - `ci`: 형식 검사 → lint(경고를 오류로) → 빌드 → 테스트 → 실제 볼륨 테스트 → 코어 벤치마크
-//!   → 인덱스 벤치마크 → MFT 파싱 벤치마크 → 세션 읽기·해석 벤치마크 → 클립보드 형식·오른쪽 메뉴·필터·실시간 탐색 벤치마크 → 복사 벤치마크 → 삭제 벤치마크. CI와 로컬이 같은 명령을 쓴다. 실제 볼륨 테스트는 관리자일 때만 시험 VHD를
+//!   → 인덱스 벤치마크 → MFT 파싱 벤치마크 → 세션 읽기·해석 벤치마크 → 클립보드 형식·오른쪽 메뉴·일괄 이름 바꾸기 미리 보기·필터·실시간 탐색 벤치마크 → 복사 벤치마크 → 삭제 벤치마크. CI와 로컬이 같은 명령을 쓴다. 실제 볼륨 테스트는 관리자일 때만 시험 VHD를
 //!   만들어 돌린다.
 //! - `test-folder`: 시험 폴더를 만든다(`facet-bench make-folder`).
 //! - `bench`: 벤치마크만 돌린다(`facet-bench list`·`facet-bench index`·`facet-bench mft`·`facet-bench session`·
@@ -17,7 +17,7 @@
 //! - `indexer <install|uninstall>`: 인덱서 서비스를 release로 빌드해 개발 기계에 설치하거나 지운다(관리자).
 //!
 //! 벤치마크 상한과 그 근거는 `crates/facet-bench/src/lib.rs`의 `LIST_LIMIT`·`QUERY_LIMIT`·
-//! `INDEX_MEMORY_LIMIT`·`MFT_PARSE_LIMIT`·`SESSION_PARSE_LIMIT`·`CLIPBOARD_LIMIT`·`MENU_LIMIT`·`FILTER_LIMIT`·`SEARCH_LIMIT`, `crates/facet-bench/src/copy.rs`의
+//! `INDEX_MEMORY_LIMIT`·`MFT_PARSE_LIMIT`·`SESSION_PARSE_LIMIT`·`CLIPBOARD_LIMIT`·`MENU_LIMIT`·`BATCH_RENAME_LIMIT`·`FILTER_LIMIT`·`SEARCH_LIMIT`, `crates/facet-bench/src/copy.rs`의
 //! `COPY_THROUGHPUT_LIMIT`·`COPY_SMALL_LIMIT`, `crates/facet-bench/src/delete.rs`의 `DELETE_LIMIT`·
 //! `UNDO_TARGET_LIMIT`에 있다.
 
@@ -265,6 +265,7 @@ fn bench_steps() -> Vec<Step> {
         session_bench_step(),
         clipboard_bench_step(),
         menu_bench_step(),
+        batch_rename_bench_step(),
         filter_bench_step(),
         query_syntax_bench_step(),
         search_bench_step(),
@@ -353,6 +354,15 @@ fn menu_bench_step() -> Step {
     Step {
         name: "오른쪽 메뉴 구성 벤치마크",
         args: facet_bench("menu"),
+        env: Vec::new(),
+    }
+}
+
+/// 선택 1만 개의 일괄 이름 바꾸기 미리 보기 계산 시간을 잰다. 상한은 `facet-bench`의 기본값이다.
+fn batch_rename_bench_step() -> Step {
+    Step {
+        name: "일괄 이름 바꾸기 미리 보기",
+        args: facet_bench("batch-rename"),
         env: Vec::new(),
     }
 }
