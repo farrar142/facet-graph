@@ -34,4 +34,8 @@ A Dev node found that the spec it implements looks wrong (its comment on the tic
 
 ## Both modes
 
+Before writing `pass` or `fixed`, run `rustfmt --edition 2024 --check` on every acceptance file of the specs in question (from the repo root; the pinned toolchain installs itself) and, if it shows a diff, format the file (`rustfmt --edition 2024 <file>`) and count that as a fix. Check the tests are clippy-clean by reading (type aliases for complex types, no needless borrows or clones, `is_empty`, no unused names): Dev copies them word for word and CI runs `cargo clippy --all-targets -- -D warnings`.
+
+In mode `issue`, when the defect Dev reported is a compiler, rustfmt or clippy error, check your fix against the implementation: `git worktree add ../dev origin/graph/dev-<ticket>`, `cp` your fixed acceptance file to its `// target:` path under `../dev/`, then `cargo clippy --manifest-path ../dev/Cargo.toml -p <crate> --tests -- -D warnings` and look only at diagnostics in that test file (other crates may not build on this Linux runner; if the crate itself does not build here, say so in the report and rely on reading). Remove the worktree when done (`git worktree remove --force ../dev`).
+
 Change files only under `specs/` and `.factory/`. Do not commit, push, merge or open PRs: the workflow does that.

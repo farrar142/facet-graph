@@ -58,7 +58,7 @@ jobs:
           claude_args: >-
             --model claude-opus-5-5
             --max-turns 120
-            --allowedTools "Bash(gh:*),Read,Write,Edit,Glob,Grep"
+            --allowedTools "Bash(gh:*),Bash(rustfmt:*),Bash(cargo fmt:*),Bash(cargo clippy:*),Bash(git worktree:*),Bash(cp:*),Read,Write,Edit,Glob,Grep"
       - name: Merge or hand back
         if: steps.guard.outputs.go == 'true'
         env:
