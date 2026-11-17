@@ -135,7 +135,8 @@ for n in $(open_with ready-for-agent); do
 done
 
 # 6. Verify: one ticket at a time (merges are serial; see graph-verify.yml).
-if [ -z "$(running_titles graph-verify.yml)" ]; then
+# A finishing verify run wakes the router while it is still in progress: count a running verify as busy # only while its ticket still waits for verification. verify_busy() { local t; for t in $(running_titles graph-verify.yml | sed -n 's/^verify #//p'); do { issue_has "$t" needs-verify || issue_has "$t" verifying; } && return 0; done; return 1; }
+if ! verify_busy; then
   n=$(open_with needs-verify | head -1)
   if [ -n "$n" ] && ! issue_has "$n" verifying; then dispatch graph-verify.yml "verify #$n" -f issue="$n"; fi
 fi
