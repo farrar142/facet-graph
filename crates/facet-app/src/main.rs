@@ -2055,6 +2055,8 @@ impl View {
             Execution::ConfirmTransfer(kind) => self.open_transfer(kind),
             Execution::ChooseTransferTarget(kind) => self.open_target(kind),
             Execution::Rename => self.begin_rename(),
+            // 일괄 이름 바꾸기 창은 뒤 앱 티켓에서 연다.
+            Execution::BatchRename => {}
             Execution::NewFolder => {
                 // 만든 폴더는 결과를 받을 때 목록에 들어가 선택·커서가 되고, 그 행에 이름 입력란이 열린다
                 // (`receive_edited`).

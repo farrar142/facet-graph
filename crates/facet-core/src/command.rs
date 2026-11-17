@@ -91,6 +91,10 @@ pub enum CommandId {
     /// 이름 바꾸기: 커서 항목의 이름 입력란을 연다([`crate::window::Execution::Rename`]). 확정하면
     /// [`crate::window::App::rename`]이 바꾼다. 커서 항목이 있고 위치가 실제 폴더일 때 켜진다.
     Rename,
+    /// 일괄 이름 바꾸기: 활성 탭의 선택(둘 이상)에 규칙을 써 한꺼번에 이름을 바꾼다
+    /// ([`crate::window::Execution::BatchRename`] → [`crate::window::App::start_batch_rename`]). 위치가 실제 폴더이거나
+    /// 검색 결과 위치이고 두 항목 이상 골랐을 때만 켜진다(커서는 세지 않는다). 기본 단축키가 없다.
+    BatchRename,
     /// 새 폴더: 활성 탭 위치에 폴더를 만든다([`crate::window::Execution::NewFolder`] →
     /// [`crate::window::App::new_folder`]). 위치가 실제 폴더일 때 켜진다.
     NewFolder,
@@ -148,7 +152,7 @@ pub enum CommandId {
 
 impl CommandId {
     /// 모든 명령. 명령 팔레트는 검색어가 없으면 이 순서로 보인다.
-    pub const ALL: [CommandId; 55] = [
+    pub const ALL: [CommandId; 56] = [
         CommandId::Open,
         CommandId::Back,
         CommandId::Forward,
@@ -186,6 +190,7 @@ impl CommandId {
         CommandId::CopyTo,
         CommandId::MoveTo,
         CommandId::Rename,
+        CommandId::BatchRename,
         CommandId::NewFolder,
         CommandId::Undo,
         CommandId::Redo,
@@ -248,6 +253,7 @@ impl CommandId {
             CommandId::CopyTo => "copy-to",
             CommandId::MoveTo => "move-to",
             CommandId::Rename => "rename",
+            CommandId::BatchRename => "batch-rename",
             CommandId::NewFolder => "new-folder",
             CommandId::Undo => "undo",
             CommandId::Redo => "redo",
@@ -368,6 +374,7 @@ impl CommandId {
             CommandId::MoveToOtherPanel => const { &[key(Key::Function(8))] },
             CommandId::CopyTo | CommandId::MoveTo => &[],
             CommandId::Rename => const { &[key(Key::Function(2))] },
+            CommandId::BatchRename => &[],
             CommandId::NewFolder => const { &[key(letter('N')).ctrl().shift()] },
             CommandId::Undo => const { &[key(letter('Z')).ctrl()] },
             CommandId::Redo => const { &[key(letter('Y')).ctrl()] },
@@ -421,6 +428,7 @@ impl CommandId {
             CommandId::Paste => tab.location().file_system_path().is_some(),
             CommandId::CopyPath => has_real_items(tab),
             CommandId::Rename => has_real_items(tab) && tab.cursor_item().is_some(),
+            CommandId::BatchRename => has_real_items(tab) && tab.selected_count() >= 2,
             // 검색 결과 위치에는 만들 폴더가 없다.
             CommandId::NewFolder => tab.location().file_system_path().is_some(),
             CommandId::SortByLocation => tab.location().is_search_results(),

@@ -118,7 +118,7 @@ impl Menu {
 }
 
 /// 항목 메뉴의 고정 순서. 구분선은 `None`이다.
-const ITEM_LAYOUT: [Option<CommandId>; 15] = [
+const ITEM_LAYOUT: [Option<CommandId>; 16] = [
     Some(CommandId::Open),
     Some(CommandId::OpenInNewTab),
     None,
@@ -133,6 +133,7 @@ const ITEM_LAYOUT: [Option<CommandId>; 15] = [
     Some(CommandId::MoveTo),
     None,
     Some(CommandId::Rename),
+    Some(CommandId::BatchRename),
     // 셸 항목은 이 아래에 구분선을 두고 붙인다(S9).
     Some(CommandId::Delete),
 ];
@@ -218,6 +219,7 @@ fn command(id: CommandId, c: &MenuContext) -> MenuCommand {
         CommandId::NewFolder => c.location_is_folder,
         CommandId::CopyPath => real_items,
         CommandId::Rename => real_items && c.has_cursor,
+        CommandId::BatchRename => real_items && c.selected_count >= 2,
         CommandId::ShowInFolder => c.location_is_results && c.has_cursor,
         CommandId::Delete => has_sources,
         CommandId::Back => c.can_go_back,

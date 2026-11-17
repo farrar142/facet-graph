@@ -65,6 +65,7 @@ fn name(command: CommandId) -> &'static str {
         CommandId::CopyTo => "복사 위치…",
         CommandId::MoveTo => "이동 위치…",
         CommandId::Rename => "이름 바꾸기",
+        CommandId::BatchRename => "일괄 이름 바꾸기",
         CommandId::NewFolder => "새 폴더",
         CommandId::Undo => "실행취소",
         CommandId::Redo => "다시 실행",
@@ -186,7 +187,7 @@ fn s2_탭_명령과_기본_단축키() {
     // tests/edit.rs), 실행취소·다시 실행·작업 기록 보기(자세한 확인은 tests/history.rs), 삭제·영구 삭제가 전부다.
     assert_eq!(
         CommandId::ALL.len(),
-        14 + expected.len() + 2 + 2 + 3 + 2 + 3 + 1 + 1 + 3 + 1 + 2 + 1 // 잘라내기, 필터, 검색 결과 위치, 검색, 내용 검색, 일치로 정렬, 현재 폴더 아래만
+        14 + expected.len() + 2 + 2 + 3 + 2 + 3 + 1 + 1 + 3 + 1 + 2 + 1 + 1 // 일괄 이름 바꾸기, 잘라내기, 필터, 검색 결과 위치, 검색, 내용 검색, 일치로 정렬, 현재 폴더 아래만
     );
     assert_eq!(GoToTab(3).as_str(), "go-to-tab-3");
     assert_eq!(CommandId::from_id("go-to-tab-8"), Some(GoToTab(8)));

@@ -79,6 +79,7 @@ fn item_menu_has_the_fixed_order() {
             Some(MoveTo),
             None,
             Some(Rename),
+            Some(BatchRename),
             Some(Delete),
         ]
     );
