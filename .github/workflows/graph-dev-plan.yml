@@ -1,0 +1,68 @@
+# Autonomous graph: Dev node, planning. Merged spec -> development tickets (sub-issues with
+# blocked-by edges) that Dev nodes implement in parallel.
+name: graph-dev-plan
+run-name: 'dev-plan #${{ inputs.issue }}'
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Tracking issue (label spec)
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  issues: write
+  actions: write
+  id-token: write
+
+concurrency:
+  group: graph-dev-plan-${{ inputs.issue }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      N: ${{ inputs.issue }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: guard
+        run: bash .github/graph/nodes.sh dev-plan guard
+      - name: Plan
+        if: steps.guard.outputs.go == 'true'
+        timeout-minutes: 60
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_bots: github-actions
+          prompt: |
+            You are the Dev node of this repo's autonomous graph, planning step.
+            Tracking issue: #${{ inputs.issue }} in ${{ github.repository }}.
+            Read .github/graph/dev-plan.md and follow it exactly.
+          claude_args: >-
+            --model claude-opus-5-5
+            --max-turns 80
+            --allowedTools "Bash(gh:*),Read,Write,Glob,Grep"
+      - name: Approve tickets
+        if: steps.guard.outputs.go == 'true'
+        env:
+          VER: ${{ steps.guard.outputs.ver }}
+        run: bash .github/graph/nodes.sh dev-plan finish
+      - name: Record cost
+        if: always() && steps.guard.outputs.go == 'true'
+        run: bash .github/graph/ledger.sh record dev-plan "$N"
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.guard.outputs.go == 'true'
+        with:
+          name: dev-plan-${{ inputs.issue }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/graph-runs/
+          if-no-files-found: ignore
+      - name: Wake the router
+        if: always()
+        run: gh workflow run graph-router.yml --repo "$REPO"

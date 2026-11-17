@@ -1,0 +1,94 @@
+# Autonomous graph: Dev node, implementation. One ticket per run, many tickets in parallel.
+# Works on a draft PR branch graph/dev-<n> and commits as it goes, so a run that hits the turn limit
+# or the timeout leaves its work for the next run. The Verify node checks and merges.
+name: graph-dev
+run-name: 'dev #${{ inputs.issue }}'
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Development ticket
+        required: true
+        type: number
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: write
+  id-token: write
+
+concurrency:
+  group: graph-dev-${{ inputs.issue }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  dev:
+    runs-on: windows-latest
+    timeout-minutes: 240
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      N: ${{ inputs.issue }}
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: guard
+        run: bash .github/graph/nodes.sh dev guard
+      - id: prep
+        if: steps.guard.outputs.go == 'true'
+        run: bash .github/graph/nodes.sh dev prepare
+      - uses: Swatinem/rust-cache@v2
+        if: steps.guard.outputs.go == 'true'
+        with:
+          shared-key: graph-dev
+          save-if: false
+      - name: Install Claude Code
+        if: steps.guard.outputs.go == 'true'
+        shell: pwsh
+        run: |
+          irm https://claude.ai/install.ps1 | iex
+          "CLAUDE_EXE=$env:USERPROFILE\.local\bin\claude.exe" >> $env:GITHUB_ENV
+      - name: Dev
+        if: steps.guard.outputs.go == 'true'
+        timeout-minutes: 225
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_bots: github-actions
+          path_to_claude_code_executable: ${{ env.CLAUDE_EXE }}
+          prompt: |
+            You are the Dev node of this repo's autonomous graph.
+            Development ticket: issue #${{ inputs.issue }} in ${{ github.repository }}.
+            You are on branch graph/dev-${{ inputs.issue }}, which has a draft PR.
+            ${{ steps.prep.outputs.conflict == 'true' && 'main was just merged into this branch WITH CONFLICTS: resolve them and commit the merge first.' || '' }}
+            Read .github/graph/dev.md and follow it exactly.
+          claude_args: >-
+            --model ${{ steps.guard.outputs.model }}
+            --max-turns 100
+            --allowedTools "Bash,Read,Write,Edit,Glob,Grep"
+      - name: Hand over
+        if: always() && steps.guard.outputs.go == 'true'
+        env:
+          CANCELLED: ${{ cancelled() }}
+        run: bash .github/graph/nodes.sh dev finish
+      - name: Record cost
+        if: always() && steps.guard.outputs.go == 'true'
+        run: bash .github/graph/ledger.sh record dev "$N"
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.guard.outputs.go == 'true'
+        with:
+          name: dev-${{ inputs.issue }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/graph-runs/
+          if-no-files-found: ignore
+      - name: Wake the router
+        if: always()
+        run: gh workflow run graph-router.yml --repo "$REPO"

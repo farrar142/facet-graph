@@ -1,0 +1,68 @@
+# Autonomous graph: Upstream node. Requirement document -> requirement catalog (specs/requirements/).
+name: graph-upstream
+run-name: 'upstream #${{ inputs.issue }}'
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Requirement issue
+        required: true
+        type: number
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: write
+  id-token: write
+
+concurrency:
+  group: graph-upstream-${{ inputs.issue }}
+  cancel-in-progress: false
+
+jobs:
+  upstream:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      N: ${{ inputs.issue }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: guard
+        run: bash .github/graph/nodes.sh upstream guard
+      - name: Upstream
+        if: steps.guard.outputs.go == 'true'
+        timeout-minutes: 30
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_bots: github-actions
+          prompt: |
+            You are the Upstream node of this repo's autonomous graph.
+            Requirement document: issue #${{ inputs.issue }} in ${{ github.repository }}.
+            Read .github/graph/upstream.md and follow it exactly.
+          claude_args: >-
+            --model claude-sonnet-5-5
+            --max-turns 40
+            --allowedTools "Bash(gh:*),Read,Write,Edit,Glob,Grep"
+      - name: Publish
+        if: steps.guard.outputs.go == 'true'
+        env:
+          HASH: ${{ steps.guard.outputs.hash }}
+        run: bash .github/graph/nodes.sh upstream finish
+      - name: Record cost
+        if: always() && steps.guard.outputs.go == 'true'
+        run: bash .github/graph/ledger.sh record upstream "$N"
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.guard.outputs.go == 'true'
+        with:
+          name: upstream-${{ inputs.issue }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/graph-runs/
+          if-no-files-found: ignore
+      - name: Wake the router
+        if: always()
+        run: gh workflow run graph-router.yml --repo "$REPO"

@@ -1,0 +1,100 @@
+# Autonomous graph: Verify node. Separate from Dev: checks a finished ticket against the ledger
+# (E2E tests word for word, full `cargo xtask ci`, acceptance review), records the ACs in
+# status.md and merges. One at a time so every merge is verified against the main it lands on.
+name: graph-verify
+run-name: 'verify #${{ inputs.issue }}'
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Development ticket labelled needs-verify
+        required: true
+        type: number
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: write
+  id-token: write
+
+concurrency:
+  group: graph-verify
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      N: ${{ inputs.issue }}
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: guard
+        run: bash .github/graph/nodes.sh verify guard
+      - id: mech
+        if: steps.guard.outputs.go == 'true'
+        run: bash .github/graph/nodes.sh verify prepare
+      - uses: Swatinem/rust-cache@v2
+        if: steps.guard.outputs.go == 'true' && steps.mech.outputs.mech == 'pass'
+        with:
+          shared-key: graph-dev
+      - id: ci
+        name: cargo xtask ci
+        if: steps.guard.outputs.go == 'true' && steps.mech.outputs.mech == 'pass'
+        run: |
+          set -o pipefail
+          cargo xtask ci 2>&1 | tee .factory/ci.log
+      - name: Install Claude Code
+        if: steps.ci.outcome == 'success'
+        shell: pwsh
+        run: |
+          irm https://claude.ai/install.ps1 | iex
+          "CLAUDE_EXE=$env:USERPROFILE\.local\bin\claude.exe" >> $env:GITHUB_ENV
+      - name: Acceptance review
+        if: steps.ci.outcome == 'success'
+        timeout-minutes: 40
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_bots: github-actions
+          path_to_claude_code_executable: ${{ env.CLAUDE_EXE }}
+          prompt: |
+            You are the Verify node of this repo's autonomous graph.
+            Development ticket: issue #${{ inputs.issue }} in ${{ github.repository }}, PR #${{ steps.guard.outputs.pr }}.
+            Read .github/graph/verify.md and follow it exactly.
+          claude_args: >-
+            --model claude-sonnet-5-5
+            --max-turns 40
+            --allowedTools "Bash(gh:*),Bash(git diff:*),Bash(git log:*),Read,Write,Glob,Grep"
+      - name: Merge or send back
+        if: always() && steps.guard.outputs.go == 'true'
+        env:
+          CANCELLED: ${{ cancelled() }}
+          PR: ${{ steps.guard.outputs.pr }}
+          MECH: ${{ steps.mech.outputs.mech }}
+          CI_OUTCOME: ${{ steps.ci.outcome }}
+        run: bash .github/graph/nodes.sh verify finish
+      - name: Record cost
+        if: always() && steps.guard.outputs.go == 'true'
+        run: bash .github/graph/ledger.sh record verify "$N"
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.guard.outputs.go == 'true'
+        with:
+          name: verify-${{ inputs.issue }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/graph-runs/
+          if-no-files-found: ignore
+      - name: Wake the router
+        if: always()
+        run: gh workflow run graph-router.yml --repo "$REPO"

@@ -1,0 +1,80 @@
+# Autonomous graph: Odin node. Logical defects across the ledger: checks every spec PR before it
+# merges (mode pr) and every spec defect a Dev node reports (mode issue).
+name: graph-odin
+run-name: "odin ${{ inputs.pr && format('pr #{0}', inputs.pr) || format('issue #{0}', inputs.issue) }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Spec PR (mode pr)
+        required: false
+        type: string
+      issue:
+        description: Ticket labelled spec-defect (mode issue)
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: write
+  id-token: write
+
+concurrency:
+  group: graph-odin-${{ inputs.pr }}-${{ inputs.issue }}
+  cancel-in-progress: false
+
+jobs:
+  odin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      PR: ${{ inputs.pr }}
+      ISSUE: ${{ inputs.issue }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: guard
+        run: bash .github/graph/nodes.sh odin guard
+      - run: mkdir -p .factory && echo ".factory/" >> .git/info/exclude
+        if: steps.guard.outputs.go == 'true'
+      - name: Odin
+        if: steps.guard.outputs.go == 'true'
+        timeout-minutes: 75
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_bots: github-actions
+          prompt: |
+            You are the Odin node of this repo's autonomous graph, in mode `${{ steps.guard.outputs.mode }}`.
+            Subject: ${{ steps.guard.outputs.mode == 'pr' && 'PR' || 'issue' }} #${{ steps.guard.outputs.subject }} in ${{ github.repository }}.
+            Read .github/graph/odin.md and follow it exactly.
+          claude_args: >-
+            --model claude-opus-5-5
+            --max-turns 120
+            --allowedTools "Bash(gh:*),Read,Write,Edit,Glob,Grep"
+      - name: Merge or hand back
+        if: steps.guard.outputs.go == 'true'
+        env:
+          MODE: ${{ steps.guard.outputs.mode }}
+          SUBJECT: ${{ steps.guard.outputs.subject }}
+          KEY: ${{ steps.guard.outputs.key }}
+        run: bash .github/graph/nodes.sh odin finish
+      - name: Record cost
+        if: always() && steps.guard.outputs.go == 'true'
+        run: bash .github/graph/ledger.sh record odin "${{ steps.guard.outputs.subject }}"
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.guard.outputs.go == 'true'
+        with:
+          name: odin-${{ steps.guard.outputs.subject }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/graph-runs/
+          if-no-files-found: ignore
+      - name: Wake the router
+        if: always()
+        run: gh workflow run graph-router.yml --repo "$REPO"
