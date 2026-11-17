@@ -38,6 +38,9 @@ report_comment() { # report_comment <n> <marker> <file>
   { echo "<!-- $2 -->"; cat "$3"; } > .factory/comment.md
   comment "$1" .factory/comment.md
 }
+# A branch left behind by a run that pushed but never opened its PR blocks a plain push: start it over.
+fresh_push() { [ -z "$(pr_of_branch "$1")" ] && git push -q origin --delete "$1" 2>/dev/null; git push -q origin "$1"; }
+
 merge_pr() { # merge_pr <pr> : squash-merge, retrying while GitHub computes mergeability
   local i
   for i in 1 2 3 4 5; do
@@ -71,10 +74,11 @@ upstream:finish)
     mark_fail "$N" upstream "$HASH" "원장 형식 검사 실패: $(head -c 1500 .factory/check.txt)"; exit 0
   fi
   b="graph/upstream-$N"
-  git switch -c "$b" && git add specs/requirements && git commit -qm "요구 카탈로그: R-$(pad4 "$N")를 #$N에 맞춘다" && git push -q origin "$b"
+  git switch -c "$b" && git add specs/requirements && git commit -qm "요구 카탈로그: R-$(pad4 "$N")를 #$N에 맞춘다" && fresh_push "$b"
   pr=$(gh pr create --repo "$REPO" --head "$b" --title "요구 카탈로그: R-$(pad4 "$N")" --body "Upstream 노드가 요구 문서 #$N(해시 \`$HASH\`)에서 고친 요구 카탈로그 항목이다. 카탈로그는 Odin을 거치지 않고 병합하고, 이 변경에서 Spec Drive가 스펙을 고친다.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)" | sed 's#.*/##')
+  [ -n "$pr" ] || { mark_fail "$N" upstream "$HASH" "카탈로그 PR을 만들지 못했다"; exit 0; }
   merge_pr "$pr" || mark_fail "$N" upstream "$HASH" "카탈로그 PR #$pr을 병합하지 못했다"
   ;;
 
@@ -102,12 +106,12 @@ spec-drive:finish)
   changed || { mark_fail "$SRC" spec-drive "$HASH" "$REQ의 스펙을 쓰지도 질문하지도 않았다"; exit 0; }
   slug=$(git status --porcelain -uall | cut -c4- | sed -n 's#^specs/features/\([^/]*\)/.*#\1#p' | head -1)
   b="graph/spec-$REQ"
-  git switch -c "$b" && git add specs/features && git commit -qm "스펙: $slug ($REQ)" && git push -q origin "$b"
+  git switch -c "$b" && git add specs/features && git commit -qm "스펙: $slug ($REQ)" && fresh_push "$b"
   gh pr create --repo "$REPO" --head "$b" --label spec-pr --title "스펙: $slug ($REQ)" --body "Spec Drive 노드가 \`$REQ\`(요구 문서 #$SRC, 해시 \`$HASH\`)에서 쓴 스펙이다. Odin 노드가 원장 전체의 논리 결함을 검증하고 형식 검사를 통과하면 병합한다.
 
 $(git show --stat --format= HEAD | sed 's/^/    /')
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)" >/dev/null
+🤖 Generated with [Claude Code](https://claude.com/claude-code)" >/dev/null || mark_fail "$SRC" spec-drive "$HASH" "스펙 PR을 만들지 못했다"
   ;;
 
 # ---------------------------------------------------------------- Odin
