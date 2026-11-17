@@ -32,6 +32,10 @@ fn context(kind: MenuKind) -> MenuContext {
             direction: Direction::Ascending,
         },
         show_hidden: false,
+        can_go_back: false,
+        can_go_forward: false,
+        can_go_up: false,
+        can_undo: false,
     }
 }
 
@@ -87,17 +91,25 @@ fn background_menu_has_the_fixed_order_and_a_sort_submenu() {
     assert_eq!(
         ids(&menu),
         vec![
+            Some(Back),
+            Some(Forward),
+            Some(Up),
+            None,
             Some(Paste),
             Some(NewFolder),
+            Some(Undo),
             None,
             None, // 정렬 기준 하위 메뉴
             Some(ToggleHidden),
             Some(Refresh),
             None,
+            Some(Search),
+            Some(TogglePanelSplit),
+            None,
             Some(CopyPath),
         ]
     );
-    let MenuEntry::Submenu(sort) = &menu.entries[3] else {
+    let MenuEntry::Submenu(sort) = &menu.entries[8] else {
         panic!("정렬 하위 메뉴가 아니다");
     };
     assert_eq!(sort.id, SubmenuId::SortBy);
@@ -227,7 +239,7 @@ fn background_menu_enablement_and_marks() {
     let menu = build(&c);
     assert!(enabled(&menu, CommandId::Paste));
     assert_eq!(mark(&menu, CommandId::ToggleHidden), Mark::Checked);
-    let MenuEntry::Submenu(sort) = &menu.entries[3] else {
+    let MenuEntry::Submenu(sort) = &menu.entries[8] else {
         panic!("정렬 하위 메뉴가 아니다");
     };
     let marks: Vec<_> = sort.entries.iter().map(|c| c.mark).collect();
