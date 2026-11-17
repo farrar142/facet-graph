@@ -59,6 +59,7 @@ pub fn command_name(command: CommandId) -> &'static str {
         CommandId::CopyTo => "복사 위치…",
         CommandId::MoveTo => "이동 위치…",
         CommandId::Rename => "이름 바꾸기",
+        CommandId::BatchRename => "일괄 이름 바꾸기",
         CommandId::NewFolder => "새 폴더",
         CommandId::Undo => "실행취소",
         CommandId::Redo => "다시 실행",

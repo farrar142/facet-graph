@@ -1203,6 +1203,27 @@ impl Tab {
 
     // --- 항목 경로 ---
 
+    /// 일괄 이름 바꾸기 미리 보기가 겹침을 볼 이름들: 실제 폴더면 탭이 읽은 그 폴더의 모든 이름(숨김 포함), 검색
+    /// 결과면 결과 목록에 있는 항목들의 이름을 제 폴더별로. 목록을 다시 읽지 않는다.
+    pub fn existing_names(&self) -> crate::batch_rename::ExistingNames {
+        let mut names = crate::batch_rename::ExistingNames::new();
+        match self.location.file_system_path() {
+            Some(folder) => {
+                for name in self.all_names() {
+                    names.insert(folder, name);
+                }
+            }
+            None => {
+                for (index, item) in self.list.iter().enumerate() {
+                    if let Some(folder) = self.list.folder(index) {
+                        names.insert(folder, &item.name);
+                    }
+                }
+            }
+        }
+        names
+    }
+
     /// 보이는 항목 `index`가 든 폴더: 검색 결과 항목이면 그 항목의 폴더, 폴더 목록이면 탭 위치(실제 폴더일 때).
     pub fn folder_of(&self, index: usize) -> Option<&Path> {
         let list_index = self.list_index(index)?;

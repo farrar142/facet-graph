@@ -322,7 +322,7 @@ mod tests {
         menu.step(-1);
         assert_eq!(menu.selected(), Some(0));
         menu.step(-1);
-        assert_eq!(menu.selected(), Some(14), "처음에서 위로 가면 끝으로 돈다");
+        assert_eq!(menu.selected(), Some(15), "처음에서 위로 가면 끝으로 돈다");
     }
 
     #[test]
@@ -394,10 +394,10 @@ mod tests {
     #[test]
     fn heights_follow_the_rows() {
         let menu = item_menu();
-        // 열두 줄과 구분선 셋.
+        // 열세 줄과 구분선 셋.
         assert_eq!(
             menu.height(),
-            8.0 + 12.0 * ROW_HEIGHT + 3.0 * SEPARATOR_HEIGHT
+            8.0 + 13.0 * ROW_HEIGHT + 3.0 * SEPARATOR_HEIGHT
         );
         assert_eq!(menu.row_top(0), PADDING);
         assert_eq!(

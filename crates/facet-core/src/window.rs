@@ -56,12 +56,14 @@
 //! 작업(이름바꾸기, 삭제·휴지통 삭제·이동, 그 실행취소·다시 실행)은 끝날 때 모든 검색 결과 탭에 반영한다.
 
 use std::collections::{HashMap, VecDeque};
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::batch_rename::{self, BatchItem, EntryStatus, Preview, RenameRule};
 use crate::clipboard::CutMarks;
 use facet_win::clipboard::format::ClipboardOperation;
 use facet_win::clipboard::{Clipboard, ClipboardError, ClipboardFiles};
@@ -483,6 +485,17 @@ pub enum ClipboardFailure {
     Rejected(CopyRejection),
 }
 
+/// [`App::start_batch_rename`]이 작업을 만들지 않은 까닭.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BatchRenameError {
+    /// 명령이 꺼져 있다(선택 둘 미만, 실제 폴더·검색 결과 위치가 아님, 창 없음).
+    Unavailable,
+    /// 미리 보기에 문제가 있다(`Preview::problem_count() > 0`).
+    Problems,
+    /// 바꿀 항목이 없다(모두 그대로).
+    NothingToRename,
+}
+
 /// 명령을 실행한 결과.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Execution {
@@ -505,6 +518,9 @@ pub enum Execution {
     ChooseTransferTarget(JobKind),
     /// 화면이 할 일: 커서 항목의 이름 입력란을 연다(F2). 확정하면 [`App::rename`]에 넘긴다.
     Rename,
+    /// 화면이 할 일: 일괄 이름 바꾸기 창을 연다. 규칙을 받아 [`App::batch_rename_preview`]로 미리 보이고 확정하면
+    /// [`App::start_batch_rename`]에 넘긴다.
+    BatchRename,
     /// 화면이 할 일: 활성 탭 위치에 새 폴더를 만든다. 처음 이름(바탕 이름)은 화면 문장이라 화면이 정해
     /// [`App::new_folder`]에 넘긴다.
     NewFolder,
@@ -2308,6 +2324,7 @@ impl App {
                 return Execution::ChooseTransferTarget(kind);
             }
             CommandId::Rename => return Execution::Rename,
+            CommandId::BatchRename => return Execution::BatchRename,
             CommandId::NewFolder => return Execution::NewFolder,
             CommandId::Undo | CommandId::Redo => {
                 let result = if command == CommandId::Undo {
@@ -2981,6 +2998,65 @@ impl App {
         self.work_area.add(id, JobKind::Recycle, location, count);
         self.poll_jobs();
         Ok(id)
+    }
+
+    /// 일괄 이름 바꾸기할 항목: 활성 탭의 선택(목록 순서, 커서 항목은 더하지 않음), 항목마다 든 폴더·이름·폴더 여부.
+    /// 명령이 꺼져 있으면 `None`.
+    pub fn batch_rename_items(&self) -> Option<Vec<BatchItem>> {
+        if !self.can_execute(CommandId::BatchRename) {
+            return None;
+        }
+        let tab = self.active_window().active_panel().active_tab();
+        Some(
+            tab.selected_indices()
+                .filter_map(|i| {
+                    let item = tab.get(i)?;
+                    Some(BatchItem {
+                        folder: tab.folder_of(i)?.to_path_buf(),
+                        name: item.name.clone(),
+                        is_folder: item.is_folder,
+                    })
+                })
+                .collect(),
+        )
+    }
+
+    /// 그 항목들에 규칙을 쓴 미리 보기. 겹침은 실제 폴더 위치면 탭이 읽은 그 폴더의 모든 이름(숨김 포함), 검색 결과
+    /// 위치면 결과 목록의 그 폴더 항목 이름들로 본다(목록을 다시 읽지 않음). 명령이 꺼져 있으면 `None`.
+    pub fn batch_rename_preview(&self, rule: &RenameRule) -> Option<Preview> {
+        let items = self.batch_rename_items()?;
+        let existing = self
+            .active_window()
+            .active_panel()
+            .active_tab()
+            .existing_names();
+        Some(batch_rename::preview(&items, rule, &existing))
+    }
+
+    /// 지금 상태로 미리 보기를 다시 만들어 실행할 수 있으면 일괄 이름 바꾸기 작업을 넣고 곧바로 시작한다
+    /// ([`App::submit_batch_rename`]). `Err`면 작업을 만들지 않고 아무것도 바뀌지 않는다.
+    pub fn start_batch_rename(&mut self, rule: &RenameRule) -> Result<JobId, BatchRenameError> {
+        let preview = self
+            .batch_rename_preview(rule)
+            .ok_or(BatchRenameError::Unavailable)?;
+        if preview.problem_count() > 0 {
+            return Err(BatchRenameError::Problems);
+        }
+        if preview.rename_count() == 0 {
+            return Err(BatchRenameError::NothingToRename);
+        }
+        let unchanged = preview.unchanged_count() as u64;
+        let items = preview
+            .entries()
+            .iter()
+            .filter(|entry| entry.status == EntryStatus::Rename)
+            .map(|entry| RenameItem {
+                folder: entry.folder.clone(),
+                from: entry.original.clone(),
+                to: OsString::from(&entry.new_name),
+            })
+            .collect();
+        Ok(self.submit_batch_rename(items, unchanged))
     }
 
     /// **일괄 이름 바꾸기** 작업을 작업 대기열에 넣어 곧바로 시작하고([`JobQueue::batch_rename`]: 차례를 기다리지
