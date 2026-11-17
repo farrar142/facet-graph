@@ -15,6 +15,7 @@
 //!   ([`measure_session`]). `cargo xtask ci`가 이것도 부른다.
 //! - 클립보드 형식 벤치마크: 파일 1만 개 목록을 `CF_HDROP` 바이트로 만들고 읽는 시간([`CLIPBOARD_LIMIT`])을 잰다
 //!   ([`measure_clipboard`]). `cargo xtask ci`가 이것도 부른다.
+//! - 일괄 이름 바꾸기 미리 보기 벤치마크: 선택 1만 개의 미리 보기 계산 시간([`BATCH_RENAME_LIMIT`])을 잰다([`measure_batch_rename`]).
 //! - 오른쪽 메뉴 구성 벤치마크: 선택 1만 개에서 메뉴를 만드는 시간([`MENU_LIMIT`])을 잰다([`measure_menu`]).
 //!   `cargo xtask ci`가 이것도 부른다.
 //! - 질의 문법 해석 벤치마크: 연산자·조건을 고루 쓴 긴 질의 하나를 해석하는 시간([`QUERY_SYNTAX_LIMIT`])을 잰다([`measure_query_syntax`]).
@@ -915,6 +916,103 @@ pub fn check_menu_limit(m: &MenuMeasurement, limit: Duration) -> Result<(), Stri
                 t.max().as_secs_f64() * 1000.0
             ));
         }
+    }
+    Ok(())
+}
+
+/// 일괄 이름 바꾸기 미리 보기 벤치마크에서 선택하는 항목 수.
+pub const BATCH_RENAME_SELECTED: usize = 10_000;
+
+/// 선택 1만 개의 일괄 이름 바꾸기 미리 보기 계산 시간의 기준(로컬, 릴리스 빌드): 한 프레임(16ms).
+///
+/// 입력란에 글자를 칠 때마다 UI 스레드에서 미리 보기를 다시 만들므로 한 프레임 안이어야 끊김이 없다.
+pub const BATCH_RENAME_TARGET: Duration = Duration::from_millis(16);
+
+/// CI가 실패시키는 미리 보기 계산 시간 상한: 로컬 기준 [`BATCH_RENAME_TARGET`]의 10배([`LIST_LIMIT`]과 같은 까닭).
+pub const BATCH_RENAME_LIMIT: Duration = Duration::from_millis(160);
+
+/// 일괄 이름 바꾸기 미리 보기 계산의 측정. [`Measurement::item_count`]는 바뀌는 항목 수다.
+pub struct BatchRenameMeasurement {
+    pub preview: Measurement,
+    /// 미리 보기가 센 바뀌는 항목 수.
+    pub rename_count: usize,
+}
+
+/// 시험 폴더(항목 [`BATCH_RENAME_SELECTED`]개)를 열어 모두 선택하고, 찾아 바꾸기·앞·뒤 붙이기·번호를 모두 쓴 규칙으로
+/// `App::batch_rename_preview`(항목 모으기 포함)를 만드는 시간을 `runs`번 잰다(한 번 데운 뒤).
+/// 선택 수나 바뀌는 항목 수가 다르면 실패한다.
+pub fn measure_batch_rename(runs: usize) -> Result<BatchRenameMeasurement, String> {
+    use facet_core::Location;
+    use facet_core::batch_rename::{NumberPosition, Numbering, RenameRule};
+    use facet_core::window::App;
+
+    let path = std::env::temp_dir()
+        .join("facet-test-folders")
+        .join(format!("items-{BATCH_RENAME_SELECTED}"));
+    make_test_folder(&path, BATCH_RENAME_SELECTED).map_err(|e| e.to_string())?;
+    let mut app = App::new(Some(Location::file_system(&path)));
+    app.wait(Duration::from_secs(60))
+        .ok_or("시험 폴더를 읽지 못했습니다")?;
+    {
+        let tab = app.active_tab_mut();
+        tab.select_only(0);
+        tab.select_range(BATCH_RENAME_SELECTED - 1);
+        if tab.selected_count() != BATCH_RENAME_SELECTED {
+            return Err(format!(
+                "선택 수가 다릅니다: {BATCH_RENAME_SELECTED}개를 기대했지만 {}개",
+                tab.selected_count()
+            ));
+        }
+    }
+    let rule = RenameRule {
+        find: "e".to_owned(),
+        replace: "E".to_owned(),
+        prefix: "p-".to_owned(),
+        suffix: "-s".to_owned(),
+        numbering: Some(Numbering {
+            start: 1,
+            digits: 5,
+            position: NumberPosition::End,
+            separator: "_".to_owned(),
+        }),
+    };
+    let preview = |app: &facet_core::window::App| {
+        app.batch_rename_preview(&rule)
+            .ok_or_else(|| "미리 보기를 만들 수 없습니다".to_owned())
+    };
+    let rename_count = preview(&app)?.rename_count();
+    if rename_count != BATCH_RENAME_SELECTED {
+        return Err(format!(
+            "바뀌는 항목 수가 다릅니다: {BATCH_RENAME_SELECTED}개를 기대했지만 {rename_count}개"
+        ));
+    }
+    let mut times = Vec::with_capacity(runs);
+    for _ in 0..runs {
+        let start = Instant::now();
+        let p = preview(&app)?;
+        times.push(start.elapsed());
+        std::hint::black_box(&p);
+    }
+    Ok(BatchRenameMeasurement {
+        preview: Measurement {
+            item_count: rename_count,
+            times,
+        },
+        rename_count,
+    })
+}
+
+/// 미리 보기 계산 중앙값이 `limit`을 넘으면 넘은 수치를 담은 메시지를 돌려준다.
+pub fn check_batch_rename_limit(m: &BatchRenameMeasurement, limit: Duration) -> Result<(), String> {
+    let t = &m.preview;
+    if t.median() > limit {
+        return Err(format!(
+            "일괄 이름 바꾸기 미리 보기 상한 초과: 선택 {}개 중앙값 {:.3}ms > 상한 {}ms (최악 {:.3}ms)",
+            t.item_count,
+            t.median().as_secs_f64() * 1000.0,
+            limit.as_millis(),
+            t.max().as_secs_f64() * 1000.0
+        ));
     }
     Ok(())
 }
