@@ -196,6 +196,7 @@ fn menu_row_and_first_shortcut_give_the_same_result() {
     let dir = tree();
     for id in [
         CommandId::Back,
+        CommandId::Forward,
         CommandId::Up,
         CommandId::TogglePanelSplit,
         CommandId::Search,
@@ -211,6 +212,11 @@ fn menu_row_and_first_shortcut_give_the_same_result() {
         let mut by_menu = app_inside_a(dir.path());
         let mut by_key = app_inside_a(dir.path());
         for app in [&mut by_menu, &mut by_key] {
+            if id == CommandId::Forward {
+                // 앞으로 갈 기록을 만든다.
+                assert_eq!(app.execute(CommandId::Back), Execution::Done);
+                app.wait(WAIT).expect("뒤로 읽기");
+            }
             app.record_operation(Record::not_undoable(
                 OperationKind::Rename,
                 Vec::new(),
@@ -223,7 +229,7 @@ fn menu_row_and_first_shortcut_give_the_same_result() {
         let from_key = by_key.execute(find_by_shortcut(shortcut).unwrap());
         assert_eq!(from_menu, from_key, "{id:?}의 실행 결과");
 
-        if matches!(id, CommandId::Back | CommandId::Up) {
+        if matches!(id, CommandId::Back | CommandId::Forward | CommandId::Up) {
             by_menu.wait(WAIT).expect("메뉴 쪽 읽기");
             by_key.wait(WAIT).expect("단축키 쪽 읽기");
         }

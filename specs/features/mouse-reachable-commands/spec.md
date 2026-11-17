@@ -102,7 +102,7 @@ pub struct MenuContext {
 ### 앱(`crates/facet-app`)
 
 - 오른쪽 메뉴 그리기(`ContextMenuView`)·키 처리(`src/context_menu.rs`)·실행(`View::execute`)은 바꾸지 않는다. 메뉴 높이는 줄 수에서 계산하므로 16줄도 `place`가 창 안에 둔다.
-- 자세히 보기 목록(`ui/app.slint`)의 넘김 내용 높이에 행 높이 하나를 더한다(`rows.length * row-height + row-height`). 「목록 아래 빈 곳」 `TouchArea`는 그대로이고, 끝까지 넘기면 높이가 행 높이 하나 이상이 된다. 화면 문장은 더하지 않는다(ADR-0007).
+- 자세히 보기 목록(`ui/app.slint`)의 넘김 내용 높이가 `rows.length * row-height + row-height`가 되게 한다(행 높이 하나를 더함. 방법은 Dev 몫: `ListView`가 내용 높이를 스스로 정하므로 바인딩을 덮을 수 없으면 목록 끝의 빈 요소 등으로 한다. 빈 요소는 행이 아니어서 행 번호·선택·커서에 들지 않는다). 「목록 아래 빈 곳」 `TouchArea`는 그대로이고, 끝까지 넘기면 높이가 행 높이 하나 이상이 된다. 화면 문장은 더하지 않는다(ADR-0007).
 - `docs/context-menu-checklist.md`를 아래 「Manual Checks」대로 고친다.
 
 ## Acceptance Criteria
@@ -112,7 +112,7 @@ pub struct MenuContext {
 - AC-3: 빈 곳 메뉴에 `CommandId::TogglePanelSplit` 줄이 있고, 그 줄의 명령을 실행하면 패널이 하나일 때 둘로 나뉘고 둘일 때 하나로 합쳐진다. (R-0001.3)
 - AC-4: 빈 곳 메뉴에 `CommandId::Search` 줄이 늘 켜져 있고, 그 줄의 명령을 실행하면 `Execution::Search`가 돌아온다. (R-0001.4)
 - AC-5: 빈 곳 메뉴에 `CommandId::Paste`·`NewFolder` 줄이 그대로 있고 기존 빈 곳 항목(붙여넣기·새 폴더·정렬 기준·숨김 항목 보이기·새로 고침·경로 복사)이 모두 기존 차례대로 남으며, 새 폴더 줄의 명령을 실행하면 `Execution::NewFolder`가 돌아온다. (R-0001.5)
-- AC-6: 빈 곳 메뉴는 맥락(선택 수·패널 수·클립보드·위치 종류·`can_go_back`·`can_go_forward`·`can_go_up`·`can_undo`)과 상관없이 Contract의 16줄 순서이고, 새 줄은 할 수 없을 때 빠지지 않고 `enabled == false`로 남는다. (R-0001.6)
+- AC-6: 빈 곳 메뉴는 맥락(선택 수·패널 수·클립보드·위치 종류·`can_go_back`·`can_go_forward`·`can_go_up`·`can_undo`)과 상관없이 Contract의 16줄 순서이고, 새 줄은 할 수 없을 때 빠지지 않고 `enabled == false`로 남으며, 뒤로·앞으로·위로·실행취소 줄의 켜짐은 각각 `can_go_back`·`can_go_forward`·`can_go_up`·`can_undo`만 따르고 검색·패널 나누기/합치기 줄은 늘 켜지며, 새 줄의 표시는 모두 `Mark::None`이다. 항목 메뉴(`MenuKind::Item`)의 순서는 새 필드와 상관없이 그대로다(검색 결과 위치의 「폴더에서 보기」 머리 포함). (R-0001.6)
 - AC-7: 앱의 빈 곳 메뉴(`App::context_menu(MenuKind::Background)`)의 모든 명령 줄의 `enabled`가 `App::can_execute(그 명령)`과 같다(새 기록 없음·뒤로 갈 기록 있음·앞으로 갈 기록 있음·실행취소 대상 있음·패널 둘 상태에서). (R-0001.6)
 - AC-8: 새로 더한 명령 여섯(`Back`·`Forward`·`Up`·`Undo`·`TogglePanelSplit`·`Search`)은 모두 기본 단축키가 하나 이상 있다(`CommandId::shortcuts`가 비지 않음). (R-0001.7)
 - AC-9: 오른쪽 메뉴 줄 옆에 그 명령의 첫 기본 단축키 글자가 보인다: 뒤로 Backspace, 앞으로 Alt+→, 위로 Alt+↑, 실행취소 Ctrl+Z, 검색 Ctrl+F, 패널 나누기/합치기 Ctrl+\(팔레트와 같은 글자). (R-0001.7)
@@ -132,6 +132,7 @@ pub struct MenuContext {
 
 - AC-9: 빈 곳 메뉴의 뒤로·앞으로·위로·실행취소·검색·패널 나누기/합치기 줄 옆에 Backspace, Alt+→, Alt+↑, Ctrl+Z, Ctrl+F, Ctrl+\ 가 보이고 명령 팔레트의 첫 단축키 글자와 같다.
 - AC-11: 10만 항목 시험 폴더(`cargo xtask test-folder`)를 열고 목록 끝까지 넘기면 마지막 행 아래 한 행 높이의 빈 곳이 보이고, 그곳 오른쪽 클릭은 빈 곳 메뉴, 왼쪽 끌기는 사각형 선택, 다른 앱에서 끌어 온 파일을 놓으면 현재 폴더로 들어간다.
+- AC-12: 시험 파일이 아니라 기존 벤치마크가 지킨다. `cargo xtask ci`의 오른쪽 메뉴 구성 벤치마크 단계(`facet-bench menu`, 선택 1만 개)가 `MENU_LIMIT`(10ms) 안으로 통과하는지 Verify가 CI 출력에서 확인한다.
 - 「열기」 절의 빈 곳 메뉴 항목 목록을 새 순서(뒤로, 앞으로, 위로, | 붙여넣기, 새 폴더, 실행취소, | 정렬 기준 ▶, 숨김 항목 보이기, 새로 고침, | 검색, 패널 나누기/합치기, | 경로 복사)로 바꾼다.
 - 빈 곳 메뉴에서 뒤로·앞으로·위로를 누르면 이동하고, 기록이 없으면(새 탭) 뒤로·앞으로가 흐리고 눌러도 아무 일이 없으며, 드라이브 루트에서 위로가 흐리다.
 - 파일을 지운 뒤 빈 곳 메뉴의 실행취소를 누르면 상태 줄에 「〈작업 이름〉 실행취소」가 보이고 파일이 돌아온다. 작업 기록이 없으면 실행취소가 흐리다.
