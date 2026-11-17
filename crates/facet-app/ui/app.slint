@@ -121,7 +121,7 @@ export enum JobStatus { queued, running, paused, awaiting-answer, finished, fail
 export enum JobAsk { none, conflict, error, not-recyclable }
 
 // 작업의 종류(코어의 `JobKind`): 복사, 이동, 실행취소, 다시 실행, 삭제(휴지통), 영구 삭제.
-export enum JobType { copy, move, undo, redo, recycle, delete }
+export enum JobType { copy, move, undo, redo, recycle, delete, batch-rename }
 
 // 이름 충돌 대화의 덮어쓰기 경고: 덮어쓸 수 없음(파일과 폴더), 덮어쓴 파일이 휴지통으로 감(되살릴 수 있음), 되살릴 수
 // 없음(대상 위치에 휴지통이 없음).
@@ -199,6 +199,8 @@ export struct JobRow {
     // 끝난 작업이 하지 못한 항목들(경로와 까닭, Rust의 문장 모듈이 만든다). 없으면 비어 있고, 있으면 결과 아래에 한
     // 줄 더 보인다(실행취소·다시 실행이 밖의 변경으로 되돌리지 못한 항목 등).
     not-done: string,
+    // 일괄 이름 바꾸기가 실패·취소로 끝나 바꾼 항목을 모두 원래 이름으로 되돌렸다.
+    rolled-back: bool,
     // 답을 기다리는 질문(코어의 `JobQuestion`). 있으면 진행 표시 아래에 질문 대화가 붙는다.
     ask: JobAsk,
     // 이름 충돌: 두 항목, 어느 쪽이 더 새것·더 큰지, 덮어쓰기를 고를 수 있는지, 덮어쓰기 경고.
@@ -763,6 +765,7 @@ component JobView inherits Rectangle {
                     : root.job.kind == JobType.redo ? @tr("다시 실행: {}", root.job.target)
                     : root.job.kind == JobType.recycle ? @tr("삭제: {}", root.job.target)
                     : root.job.kind == JobType.delete ? @tr("영구 삭제: {}", root.job.target)
+                    : root.job.kind == JobType.batch-rename ? @tr("일괄 이름 바꾸기: {}", root.job.target)
                     : root.job.kind == JobType.move ? @tr("이동 → {}", root.job.target) : @tr("복사 → {}", root.job.target);
                 horizontal-stretch: 1;
                 overflow: elide;
@@ -841,6 +844,8 @@ component JobView inherits Rectangle {
         if root.job.finished: Text {
             text: root.job.kind == JobType.undo ? @tr("되돌린 항목 {} · 못 한 항목 {} · 남은 항목 {}", root.job.completed, root.job.skipped, root.job.left)
                 : root.job.kind == JobType.redo ? @tr("다시 한 항목 {} · 못 한 항목 {} · 남은 항목 {}", root.job.completed, root.job.skipped, root.job.left)
+                : root.job.kind == JobType.batch-rename && root.job.rolled-back ? @tr("모두 되돌림")
+                : root.job.kind == JobType.batch-rename ? @tr("바꿈 {} · 건너뜀 {}", root.job.completed, root.job.skipped)
                 : @tr("끝낸 항목 {} · 건너뛴 항목 {} · 남은 항목 {}", root.job.completed, root.job.skipped, root.job.left);
             overflow: elide;
             color: Palette.foreground.transparentize(30%);

@@ -295,6 +295,10 @@ pub fn operation_name(record: &Record) -> String {
         (OperationKind::Delete, None) => format!("항목 {n}개 영구 삭제"),
         (OperationKind::Recycle, Some(name)) => format!("「{name}」 삭제"),
         (OperationKind::Recycle, None) => format!("항목 {n}개 삭제"),
+        // 일괄 이름 바꾸기는 항목이 하나여도 수로 보인다(작업 이름이 한 줄로 같게).
+        (OperationKind::BatchRename, _) => {
+            format!("일괄 이름 바꾸기({}개)", record.steps().len())
+        }
     }
 }
 
@@ -736,6 +740,24 @@ mod tests {
             to: std::path::PathBuf::from(to),
             stamp: stamp(),
         }
+    }
+
+    #[test]
+    fn 일괄_이름_바꾸기는_바꾼_항목_수로_부른다() {
+        let batch = Record::batch_rename(
+            vec![
+                renamed(r"C:\a\사진 1.jpg", r"C:\a\휴가 1.jpg"),
+                renamed(r"C:\b\사진 2.jpg", r"C:\b\휴가 2.jpg"),
+                renamed(r"C:\a\사진 3.jpg", r"C:\a\휴가 3.jpg"),
+            ],
+            4,
+        );
+        assert_eq!(operation_name(&batch), "일괄 이름 바꾸기(3개)");
+        assert_eq!(undo_notice(&batch), "일괄 이름 바꾸기(3개) 실행취소");
+        assert_eq!(redo_notice(&batch), "일괄 이름 바꾸기(3개) 다시 실행");
+        // 항목이 하나여도 이름이 아니라 수다.
+        let one = Record::batch_rename(vec![renamed(r"C:\a\x", r"C:\a\y")], 0);
+        assert_eq!(operation_name(&one), "일괄 이름 바꾸기(1개)");
     }
 
     #[test]

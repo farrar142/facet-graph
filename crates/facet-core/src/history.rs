@@ -7,7 +7,9 @@
 //! 복사·이동(폴더 안의 항목도 하나씩, [`Step::Copied`]·[`Step::Moved`]·[`Step::MovedFolder`], 원래 대상을 휴지통으로
 //! 보내고 덮어쓴 파일은 그 휴지통 항목과 함께 [`Step::Overwrote`])이 기록된다. **영구 삭제**는 되돌릴 수 없는
 //! 기록([`NotUndoable::PermanentDelete`], 넘긴 원본마다 [`Step::Deleted`])으로 남는다. **휴지통 삭제**는 휴지통에
-//! 보낸 항목마다 [`Step::Recycled`](원래 경로와 휴지통 항목)로 남고, 실행취소는 휴지통에서 복원한다.
+//! 보낸 항목마다 [`Step::Recycled`](원래 경로와 휴지통 항목)로 남고, 실행취소는 휴지통에서 복원한다. **일괄 이름
+//! 바꾸기**는 기록 하나(바꾼 항목마다 [`Step::Renamed`], [`OperationKind::BatchRename`])로 남고 실행취소·다시 실행이
+//! 전부 아니면 전무다.
 //!
 //! - **실행취소 대상**은 끝난 작업 가운데 마지막 기록이다([`History::undo_target`]). 그것이 되돌릴 수 없는 작업이면
 //!   실행취소는 까닭을 돌려주고 그 앞 기록으로 넘어가지 않는다.
@@ -61,6 +63,10 @@ pub enum OperationKind {
     /// **휴지통 삭제**. 항목은 휴지통에 보낸 [`Step::Recycled`]이고, 휴지통에 들어가지 않아 영구 삭제로 진행한
     /// 항목은 [`Step::Deleted`]로 함께 든다(그 항목만 되돌릴 수 없고 기록 전체는 되돌릴 수 있다).
     Recycle,
+    /// **일괄 이름 바꾸기**([`crate::job::JobQueue::batch_rename`]). 항목은 바꾼 항목마다 [`Step::Renamed`](넘긴
+    /// 차례)이고 규칙이 바꾸지 않아 건너뛴 항목 수가 [`Record::items_skipped`]다. 실행취소·다시 실행은 **전부 아니면
+    /// 전무**다: 한 항목이라도 밖에서 바뀌었으면 아무것도 바꾸지 않고 기록이 통째로 제자리에 남는다.
+    BatchRename,
 }
 
 /// 되돌릴 수 없는 까닭의 종류.
@@ -273,6 +279,12 @@ impl Record {
             not_undoable: Some(reason),
             ..Record::new(kind, steps)
         }
+    }
+
+    /// 끝난 일괄 이름 바꾸기의 기록: 바꾼 항목마다 [`Step::Renamed`](`steps`, 넘긴 차례), 규칙이 바꾸지 않아 건너뛴
+    /// 항목 수 `unchanged`. 되돌릴 수 있다.
+    pub fn batch_rename(steps: Vec<Step>, unchanged: u64) -> Record {
+        Record::new(OperationKind::BatchRename, steps).with_skipped(unchanged)
     }
 
     /// 끝난 이름바꾸기·새 폴더의 기록.

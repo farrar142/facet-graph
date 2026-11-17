@@ -1112,6 +1112,7 @@ fn job_row(entry: &JobEntry) -> JobRow {
             JobKind::Redo => JobType::Redo,
             JobKind::Recycle => JobType::Recycle,
             JobKind::Delete => JobType::Delete,
+            JobKind::BatchRename => JobType::BatchRename,
         },
         target: entry.target.display().to_string().into(),
         status: match entry.state {
@@ -1146,6 +1147,9 @@ fn job_row(entry: &JobEntry) -> JobRow {
         skipped: summary.map_or(0, |s| count64(s.items_skipped())),
         left: summary.map_or(0, |s| count64(s.items_remaining)),
         not_done: summary.map(text::not_done_text).unwrap_or_default().into(),
+        rolled_back: entry.kind == JobKind::BatchRename
+            && summary.is_some_and(|s| s.items_renamed == 0)
+            && matches!(entry.state, JobState::Failed | JobState::Cancelled),
         ask: asked.ask,
         source: asked.source,
         target_item: asked.target,

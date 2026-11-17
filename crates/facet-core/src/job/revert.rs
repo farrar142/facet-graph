@@ -1,6 +1,8 @@
 //! 실행취소·다시 실행 작업: 작업 기록의 기록 하나를 항목마다 되돌리거나 다시 한다.
 //!
 //! - **이름바꾸기**: 실행취소는 되바꾸고, 다시 실행은 다시 바꾼다.
+//! - **일괄 이름 바꾸기**: 이름바꾸기와 같되 **전부 아니면 전무**다(`run_all_or_nothing`): 모든 항목을 먼저 확인해
+//!   하나라도 밖에서 바뀌었으면 아무것도 바꾸지 않고, 사슬·맞바꿈은 임시 이름을 거치며, 중간 실패·취소면 되돌려 놓는다.
 //! - **새 폴더**: 실행취소는 비어 있으면 지우고, 다시 실행은 다시 만든다.
 //! - **복사**: 실행취소는 만든 항목을 **휴지통으로 보낸다**(영구 삭제하지 않는다, 실행취소가 데이터를 잃지 않게).
 //!   만든 폴더가 통째로 그대로면(안의 항목이 모두 기록한 모습이고 다른 항목이 없음) 폴더 하나로 보내고, 아니면 그
@@ -35,8 +37,10 @@ use facet_win::file_ops::{self, FileOpErrorKind};
 use facet_win::recycle::{self, RecycleOutcome, RecycledItem};
 
 use super::copy::{Copier, ErrorStep, FileOutcome, error_kind};
-use super::{Context, Resolution, Summary};
-use crate::history::{NotReverted, Outcomes, Reversal, RevertSkip, Stamp, Step, path_key};
+use super::{Context, ItemFailure, Resolution, Summary};
+use crate::history::{
+    NotReverted, OperationKind, Outcomes, Reversal, RevertSkip, Stamp, Step, path_key,
+};
 
 /// 휴지통으로 한 번에 보내는 항목 수. 셸 호출 사이에서 일시정지·취소를 보고 진행을 알린다.
 const RECYCLE_CHUNK: usize = 256;
@@ -44,6 +48,8 @@ const RECYCLE_CHUNK: usize = 256;
 /// 넣기 전에 정한 실행취소·다시 실행 작업.
 pub(crate) struct RevertJob {
     reversal: Reversal,
+    /// 기록의 작업 종류. 일괄 이름 바꾸기는 전부 아니면 전무로 되돌린다.
+    kind: OperationKind,
     /// 할 차례대로의 항목.
     steps: Vec<Step>,
     /// 항목마다(같은 차례) 결과를 적는 곳.
@@ -63,12 +69,18 @@ enum Attempt {
 }
 
 impl RevertJob {
-    pub(crate) fn new(reversal: Reversal, steps: Vec<Step>, outcomes: Outcomes) -> Self {
+    pub(crate) fn new(
+        reversal: Reversal,
+        kind: OperationKind,
+        steps: Vec<Step>,
+        outcomes: Outcomes,
+    ) -> Self {
         if let Ok(mut slots) = outcomes.lock() {
             *slots = vec![None; steps.len()];
         }
         RevertJob {
             reversal,
+            kind,
             steps,
             outcomes,
         }
@@ -81,6 +93,9 @@ impl RevertJob {
 
     /// 작업 스레드에서 끝까지(또는 취소될 때까지) 실행한다.
     pub(super) fn run(self, context: &Context<'_>) -> (Summary, bool) {
+        if self.kind == OperationKind::BatchRename {
+            return self.run_all_or_nothing(context);
+        }
         let mut copier = Copier::new(context, false);
         let totals = std::sync::Arc::clone(&copier.reporter.totals);
         totals
@@ -158,6 +173,143 @@ impl RevertJob {
         }
         if !run.copier.cancelled {
             run.finish_redone_folders(&redone_folders);
+        }
+        copier.finish()
+    }
+}
+
+impl RevertJob {
+    /// 일괄 이름 바꾸기 기록을 **전부 아니면 전무**로 되돌린다(다시 한다). 먼저 모든 항목을 확인하고(다룰 항목이 있고
+    /// 기록한 모습과 맞는지, 되바꿀 자리에 이 기록이 비우지 않을 다른 항목이 없는지) 하나라도 걸리면 아무것도 바꾸지
+    /// 않고 걸린 항목마다 [`Summary::not_reverted`]에 담는다(기록은 통째로 제자리에 남는다). 확인을 지나면 사슬·맞바꿈도
+    /// 임시 이름을 거쳐 모두 바꾸고, 중간에 실패하거나 취소하면 바꾼 것을 다시 돌려 놓는다. 항목별 오류 질문은 하지
+    /// 않는다.
+    fn run_all_or_nothing(self, context: &Context<'_>) -> (Summary, bool) {
+        let mut copier = Copier::new(context, false);
+        let totals = std::sync::Arc::clone(&copier.reporter.totals);
+        totals
+            .items
+            .store(self.steps.len() as u64, Ordering::Release);
+        totals.counted.store(true, Ordering::Release);
+
+        // 항목마다 지금 경로·옮길 경로·기록한 모습.
+        let mut current = Vec::with_capacity(self.steps.len());
+        let mut targets = Vec::with_capacity(self.steps.len());
+        let mut stamps = Vec::with_capacity(self.steps.len());
+        for step in &self.steps {
+            let Step::Renamed { from, to, stamp } = step else {
+                // 일괄 이름 바꾸기 기록에는 이름바꾸기만 든다.
+                copier.summary.not_reverted.push(NotReverted {
+                    path: step.path().to_path_buf(),
+                    reason: RevertSkip::Missing,
+                });
+                return copier.finish();
+            };
+            let (now, target) = match self.reversal {
+                Reversal::Undo => (to.clone(), from.clone()),
+                Reversal::Redo => (from.clone(), to.clone()),
+            };
+            current.push(now);
+            targets.push(target);
+            stamps.push(*stamp);
+        }
+
+        // 확인: 아무것도 바꾸기 전에 모두 본다.
+        let occupied: std::collections::HashSet<String> =
+            current.iter().map(|path| path_key(path)).collect();
+        for ((now, target), stamp) in current.iter().zip(&targets).zip(&stamps) {
+            let reason = match Stamp::read(now) {
+                None => Some(RevertSkip::Missing),
+                Some(seen) if !stamp.matches(&seen) => Some(RevertSkip::Changed),
+                Some(_)
+                    if !occupied.contains(&path_key(target))
+                        && fs::symlink_metadata(target).is_ok() =>
+                {
+                    Some(RevertSkip::NameTaken)
+                }
+                Some(_) => None,
+            };
+            if let Some(reason) = reason {
+                copier.summary.not_reverted.push(NotReverted {
+                    path: now.clone(),
+                    reason,
+                });
+            }
+        }
+        if !copier.summary.not_reverted.is_empty() {
+            return copier.finish();
+        }
+
+        let originals = current.clone();
+        let control = context.control;
+        let outcome = {
+            let reporter = &mut copier.reporter;
+            super::batch_rename::permute(&mut current, &targets, &mut |op| match op {
+                super::batch_rename::Op::Before => control.proceed(),
+                super::batch_rename::Op::Placed(path) => {
+                    reporter.items_done += 1;
+                    reporter.current = Some(path.to_path_buf());
+                    reporter.maybe_emit(control);
+                    true
+                }
+            })
+        };
+        match outcome {
+            Ok(()) => {
+                // 대소문자만 바꾼 항목처럼 이미 제자리였던 항목도 한 것으로 센다.
+                copier.reporter.items_done = self.steps.len() as u64;
+                if let Ok(mut slots) = self.outcomes.lock() {
+                    for (index, step) in self.steps.iter().enumerate() {
+                        let Step::Renamed { from, to, stamp } = step else {
+                            continue;
+                        };
+                        let stamp = Stamp::read(&targets[index]).unwrap_or(*stamp);
+                        if let Some(slot) = slots.get_mut(index) {
+                            *slot = Some(Step::Renamed {
+                                from: from.clone(),
+                                to: to.clone(),
+                                stamp,
+                            });
+                        }
+                    }
+                }
+            }
+            Err(stop) => {
+                match stop {
+                    super::batch_rename::Stop::Failed { path, kind } => {
+                        copier
+                            .summary
+                            .failures
+                            .push(ItemFailure { source: path, kind });
+                    }
+                    super::batch_rename::Stop::Cancelled => copier.cancelled = true,
+                }
+                for (path, kind) in super::batch_rename::roll_back(&mut current, &originals) {
+                    copier
+                        .summary
+                        .failures
+                        .push(ItemFailure { source: path, kind });
+                }
+                // 되돌리지 못하고 반대편 자리에 놓인 항목은 그쪽 목록으로 보낸다(기록과 디스크가 어긋나지 않게).
+                if let Ok(mut slots) = self.outcomes.lock() {
+                    for (index, step) in self.steps.iter().enumerate() {
+                        if current[index].as_os_str() != targets[index].as_os_str() {
+                            continue;
+                        }
+                        if let (Step::Renamed { from, to, .. }, Some(stamp)) =
+                            (step, Stamp::read(&targets[index]))
+                            && let Some(slot) = slots.get_mut(index)
+                        {
+                            *slot = Some(Step::Renamed {
+                                from: from.clone(),
+                                to: to.clone(),
+                                stamp,
+                            });
+                        }
+                    }
+                }
+                copier.reporter.items_done = 0;
+            }
         }
         copier.finish()
     }
