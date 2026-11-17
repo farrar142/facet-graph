@@ -257,7 +257,11 @@ fn item_menu_is_unchanged() {
     assert_eq!(rows(&build(&c)), expected);
     c.can_go_back = false;
     c.can_undo = false;
-    assert_eq!(rows(&build(&c)), expected, "새 필드는 항목 메뉴를 바꾸지 않는다");
+    assert_eq!(
+        rows(&build(&c)),
+        expected,
+        "새 필드는 항목 메뉴를 바꾸지 않는다"
+    );
     c.location_is_results = true;
     let menu = build(&c);
     assert_eq!(rows(&menu)[0], Row::Command(ShowInFolder));
