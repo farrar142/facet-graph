@@ -81,7 +81,7 @@ jobs:
       - name: Merge or send back
         if: always() && steps.guard.outputs.go == 'true'
         env:
-          CANCELLED: ${{ cancelled() }}
+          CANCELLED: ${{ job.status == 'cancelled' }}
           PR: ${{ steps.guard.outputs.pr }}
           MECH: ${{ steps.mech.outputs.mech }}
           CI_OUTCOME: ${{ steps.ci.outcome }}

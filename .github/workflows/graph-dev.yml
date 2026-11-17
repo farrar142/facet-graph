@@ -78,7 +78,7 @@ jobs:
       - name: Hand over
         if: always() && steps.guard.outputs.go == 'true'
         env:
-          CANCELLED: ${{ cancelled() }}
+          CANCELLED: ${{ job.status == 'cancelled' }}
         run: bash .github/graph/nodes.sh dev finish
       - name: Record cost
         if: always() && steps.guard.outputs.go == 'true'
