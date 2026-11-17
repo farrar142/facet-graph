@@ -100,6 +100,7 @@ use crate::tab_drag::{Frame, Hover, Point, ScreenPoint, Strip, TabDrag, Target};
 use crate::target::{Section, TargetChooser};
 
 mod address;
+mod batch_rename;
 mod context_menu;
 mod drop_menu;
 mod file_drop;
@@ -809,6 +810,9 @@ fn connect(ui: &AppWindow, w: WindowId) {
     });
     ui.on_palette_close(move || with_view(w, View::close_palette));
     ui.on_history_close(move || with_view(w, View::close_history));
+    ui.on_batch_edited(move || with_view(w, View::batch_edited));
+    ui.on_batch_accept(move || with_view(w, View::batch_accept));
+    ui.on_batch_cancel(move || with_view(w, View::close_batch));
     ui.on_context_menu(move |panel, row, x, y| {
         with_view(w, |view| view.open_context_menu(panel, row, (x, y)));
     });
@@ -1237,6 +1241,8 @@ struct View {
     marquee_timer: Timer,
     /// 복사·이동 대상 선택 창이 열려 있으면 그 상태. 화면의 `target-open`과 함께 바뀐다.
     target: RefCell<Option<TargetChooser>>,
+    /// 일괄 이름 바꾸기 창이 열려 있으면 그 상태. 화면의 `batch-open`과 함께 바뀐다.
+    batch: RefCell<Option<batch_rename::BatchWindow>>,
     /// 대상 선택 창의 줄.
     target_rows: Rc<VecModel<TargetRow>>,
     /// 확인 줄이 열려 있으면 확인하면 넣을 복사·이동. 화면의 `confirm-open`과 함께 바뀐다.
@@ -1332,6 +1338,7 @@ impl View {
             marquee: RefCell::default(),
             marquee_timer: Timer::default(),
             target: RefCell::default(),
+            batch: RefCell::default(),
             target_rows,
             transfer: RefCell::default(),
             delete: RefCell::default(),
@@ -2055,8 +2062,7 @@ impl View {
             Execution::ConfirmTransfer(kind) => self.open_transfer(kind),
             Execution::ChooseTransferTarget(kind) => self.open_target(kind),
             Execution::Rename => self.begin_rename(),
-            // 일괄 이름 바꾸기 창은 뒤 앱 티켓에서 연다.
-            Execution::BatchRename => {}
+            Execution::BatchRename => self.open_batch(),
             Execution::NewFolder => {
                 // 만든 폴더는 결과를 받을 때 목록에 들어가 선택·커서가 되고, 그 행에 이름 입력란이 열린다
                 // (`receive_edited`).
@@ -2337,6 +2343,126 @@ impl View {
                 self.execute(command);
             }
             MenuOutcome::None => self.sync_menu(),
+        }
+    }
+
+    /// 일괄 이름 바꾸기 창을 연다: 입력은 비어 있고 미리 보기는 모두 「그대로」다. 지금 할 수 없으면 열지 않는다.
+    fn open_batch(&self) {
+        let ui = &self.ui;
+        ui.set_batch_find(SharedString::new());
+        ui.set_batch_replace(SharedString::new());
+        ui.set_batch_prefix(SharedString::new());
+        ui.set_batch_suffix(SharedString::new());
+        ui.set_batch_numbering(false);
+        ui.set_batch_start("1".into());
+        ui.set_batch_digits("1".into());
+        ui.set_batch_at_end(true);
+        ui.set_batch_separator(SharedString::new());
+        ui.set_batch_problem(SharedString::new());
+        let inputs = batch_rename::Inputs::default();
+        let preview = self.app.borrow().batch_rename_preview(&inputs.rule());
+        if preview.is_none() {
+            return;
+        }
+        self.close_rename();
+        self.close_address_edit();
+        self.close_palette();
+        self.close_transfer();
+        self.close_target();
+        let mut window = batch_rename::BatchWindow::default();
+        window.update(inputs, preview);
+        *self.batch.borrow_mut() = Some(window);
+        self.show_batch();
+        ui.set_batch_open(true);
+    }
+
+    /// 입력란의 값을 읽는다.
+    fn batch_inputs(&self) -> batch_rename::Inputs {
+        let ui = &self.ui;
+        batch_rename::Inputs {
+            find: ui.get_batch_find().into(),
+            replace: ui.get_batch_replace().into(),
+            prefix: ui.get_batch_prefix().into(),
+            suffix: ui.get_batch_suffix().into(),
+            numbering: ui.get_batch_numbering(),
+            start: ui.get_batch_start().into(),
+            digits: ui.get_batch_digits().into(),
+            at_end: ui.get_batch_at_end(),
+            separator: ui.get_batch_separator().into(),
+        }
+    }
+
+    /// 입력이 바뀌었다: 미리 보기를 UI 스레드에서 다시 계산해 그린다.
+    fn batch_edited(&self) {
+        if self.batch.borrow().is_none() {
+            return;
+        }
+        let inputs = self.batch_inputs();
+        let preview = self.app.borrow().batch_rename_preview(&inputs.rule());
+        if let Some(window) = self.batch.borrow_mut().as_mut() {
+            window.update(inputs, preview);
+        }
+        self.ui.set_batch_problem(SharedString::new());
+        self.show_batch();
+    }
+
+    /// 마지막 미리 보기를 화면에 둔다.
+    fn show_batch(&self) {
+        let batch = self.batch.borrow();
+        let Some(window) = batch.as_ref() else {
+            return;
+        };
+        let rows: Vec<BatchRow> = window
+            .preview()
+            .map(batch_rename::lines)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|line| BatchRow {
+                original: line.original.into(),
+                new_name: line.new_name.into(),
+                kind: match line.kind {
+                    batch_rename::LineKind::Rename => BatchRowKind::Rename,
+                    batch_rename::LineKind::Unchanged => BatchRowKind::Unchanged,
+                    batch_rename::LineKind::Problem => BatchRowKind::Problem,
+                },
+                problem: line.problem.into(),
+            })
+            .collect();
+        self.ui
+            .set_batch_rows(ModelRc::from(Rc::new(VecModel::from(rows))));
+        self.ui.set_batch_counts(window.counts_text().into());
+        self.ui.set_batch_can_execute(window.can_execute());
+    }
+
+    /// 「바꾸기」·Enter: 실행할 수 있을 때만 작업을 넣고 닫는다. 막히면 까닭을 보이고 창은 그대로다.
+    fn batch_accept(&self) {
+        let can = self
+            .batch
+            .borrow()
+            .as_ref()
+            .is_some_and(batch_rename::BatchWindow::can_execute);
+        if !can {
+            return;
+        }
+        let rule = self.batch_inputs().rule();
+        let result = self.app.borrow_mut().start_batch_rename(&rule);
+        match result {
+            Ok(_) => {
+                self.close_batch();
+                refresh_jobs();
+            }
+            Err(error) => self
+                .ui
+                .set_batch_problem(text::batch_error_text(error).into()),
+        }
+    }
+
+    /// 일괄 이름 바꾸기 창을 닫는다: 아무것도 바꾸지 않는다.
+    fn close_batch(&self) {
+        if self.batch.borrow_mut().take().is_some() {
+            self.ui.set_batch_open(false);
+            self.ui
+                .set_batch_rows(ModelRc::from(Rc::new(VecModel::<BatchRow>::default())));
         }
     }
 
