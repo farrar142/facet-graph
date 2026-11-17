@@ -2167,6 +2167,10 @@ impl App {
             clipboard_has_files: self.clipboard_has_files(),
             sort: tab.sort(),
             show_hidden: self.show_hidden,
+            can_go_back: tab.can_go_back(),
+            can_go_forward: tab.can_go_forward(),
+            can_go_up: tab.can_go_up(),
+            can_undo: self.history().undo_target().is_some(),
         }
     }
 

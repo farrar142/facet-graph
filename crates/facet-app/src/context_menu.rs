@@ -300,6 +300,10 @@ mod tests {
                 direction: Direction::Ascending,
             },
             show_hidden: false,
+            can_go_back: false,
+            can_go_forward: false,
+            can_go_up: false,
+            can_undo: false,
         }
     }
 
@@ -335,33 +339,33 @@ mod tests {
     #[test]
     fn submenu_opens_with_right_and_closes_with_left() {
         let mut menu = ContextMenu::new(build(&context(MenuKind::Background)));
-        // 붙여넣기(꺼짐)는 건너뛰고 새 폴더 → 정렬 기준(하위 메뉴).
+        // 꺼진 뒤로·앞으로·위로·붙여넣기는 건너뛰고 새 폴더 → (꺼진 실행취소 건너뜀) 정렬 기준(하위 메뉴).
         menu.step(1);
-        assert_eq!(menu.selected(), Some(1));
+        assert_eq!(menu.selected(), Some(5));
         menu.step(1);
-        assert_eq!(menu.selected(), Some(3));
+        assert_eq!(menu.selected(), Some(8));
         assert!(menu.open_sub());
-        assert_eq!(menu.open_submenu(), Some(3));
+        assert_eq!(menu.open_submenu(), Some(8));
         assert_eq!(menu.sub_selected(), Some(0));
         menu.step(1);
         assert_eq!(menu.sub_selected(), Some(1));
         assert_eq!(menu.enter(), Outcome::Run(CommandId::SortByModified));
         assert!(menu.close_sub());
-        assert_eq!(menu.selected(), Some(3));
+        assert_eq!(menu.selected(), Some(8));
         assert!(!menu.close_sub());
     }
 
     #[test]
     fn enter_on_a_submenu_row_opens_it() {
         let mut menu = ContextMenu::new(build(&context(MenuKind::Background)));
-        menu.hover(3);
-        assert_eq!(menu.open_submenu(), Some(3), "마우스를 올리면 열린다");
-        menu.hover(4);
+        menu.hover(8);
+        assert_eq!(menu.open_submenu(), Some(8), "마우스를 올리면 열린다");
+        menu.hover(9);
         assert_eq!(menu.open_submenu(), None, "다른 줄로 가면 닫힌다");
-        menu.hover(3);
+        menu.hover(8);
         menu.close_sub();
         assert_eq!(menu.enter(), Outcome::None);
-        assert_eq!(menu.open_submenu(), Some(3));
+        assert_eq!(menu.open_submenu(), Some(8));
     }
 
     #[test]

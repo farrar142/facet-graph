@@ -47,6 +47,14 @@ pub struct MenuContext {
     pub sort: Sort,
     /// 숨김 항목을 보이는가.
     pub show_hidden: bool,
+    /// 활성 탭에 뒤로 갈 기록이 있는가.
+    pub can_go_back: bool,
+    /// 활성 탭에 앞으로 갈 기록이 있는가.
+    pub can_go_forward: bool,
+    /// 활성 탭에 상위 위치가 있는가.
+    pub can_go_up: bool,
+    /// 실행취소 대상이 있는가.
+    pub can_undo: bool,
 }
 
 /// 메뉴 항목에 붙는 표시.
@@ -158,20 +166,31 @@ pub fn build(context: &MenuContext) -> Menu {
                 }))
                 .collect()
         }
-        MenuKind::Background => vec![
-            MenuEntry::Command(command(CommandId::Paste, context)),
-            MenuEntry::Command(command(CommandId::NewFolder, context)),
-            MenuEntry::Separator,
-            MenuEntry::Submenu(Submenu {
-                id: SubmenuId::SortBy,
-                enabled: true,
-                entries: SORT_LAYOUT.iter().map(|id| command(*id, context)).collect(),
-            }),
-            MenuEntry::Command(command(CommandId::ToggleHidden, context)),
-            MenuEntry::Command(command(CommandId::Refresh, context)),
-            MenuEntry::Separator,
-            MenuEntry::Command(command(CommandId::CopyPath, context)),
-        ],
+        MenuKind::Background => {
+            let c = |id| MenuEntry::Command(command(id, context));
+            vec![
+                c(CommandId::Back),
+                c(CommandId::Forward),
+                c(CommandId::Up),
+                MenuEntry::Separator,
+                c(CommandId::Paste),
+                c(CommandId::NewFolder),
+                c(CommandId::Undo),
+                MenuEntry::Separator,
+                MenuEntry::Submenu(Submenu {
+                    id: SubmenuId::SortBy,
+                    enabled: true,
+                    entries: SORT_LAYOUT.iter().map(|id| command(*id, context)).collect(),
+                }),
+                c(CommandId::ToggleHidden),
+                c(CommandId::Refresh),
+                MenuEntry::Separator,
+                c(CommandId::Search),
+                c(CommandId::TogglePanelSplit),
+                MenuEntry::Separator,
+                c(CommandId::CopyPath),
+            ]
+        }
     };
     Menu {
         kind: context.kind,
@@ -201,6 +220,10 @@ fn command(id: CommandId, c: &MenuContext) -> MenuCommand {
         CommandId::Rename => real_items && c.has_cursor,
         CommandId::ShowInFolder => c.location_is_results && c.has_cursor,
         CommandId::Delete => has_sources,
+        CommandId::Back => c.can_go_back,
+        CommandId::Forward => c.can_go_forward,
+        CommandId::Up => c.can_go_up,
+        CommandId::Undo => c.can_undo,
         _ => true,
     };
     let mark = match id {
