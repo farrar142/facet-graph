@@ -13,8 +13,10 @@ STALE_MINUTES=${GRAPH_STALE_MINUTES:-15}
 
 if ! bash "$GRAPH_DIR/ledger.sh" check; then exit 0; fi
 
+ACTIVE=0 # nodes this pass found running or dispatched; the graph is not finished while any exist
 dispatch() { # dispatch <workflow> <run title> <inputs...>
   local wf=$1 title=$2; shift 2
+  ACTIVE=$((ACTIVE + 1))
   if running_titles "$wf" | grep -qxF "$title"; then echo "running: $title"; return; fi
   echo "dispatch: $title"
   gh workflow run "$wf" --repo "$REPO" "$@" >/dev/null
@@ -142,7 +144,8 @@ fi
 #    and nothing is open in between. Mark the ledger once (the coordinator's watcher reports it).
 open_work=$(echo "$issues_json" | jq '[.[] | select(.state == "OPEN" and ((.labels | index("spec")) or (.labels | index("ready-for-agent")) or (.labels | index("in-progress")) or (.labels | index("needs-verify")) or (.labels | index("verifying")) or (.labels | index("spec-defect")) or (.labels | index("needs-decision"))))] | length')
 specs=$(ls specs/features/*/spec.md 2>/dev/null | wc -l)
-if [ "$open_work" -eq 0 ] && [ "$specs" -gt 0 ] && [ "$(echo "$prs_json" | jq length)" -eq 0 ]; then
+node_runs=$(for s in queued in_progress waiting pending; do gh run list --repo "$REPO" --status $s --limit 50 --json workflowName --jq '.[].workflowName'; done | grep '^graph-' | grep -vc '^graph-router$' || true)
+if [ "$ACTIVE" -eq 0 ] && [ "$node_runs" -eq 0 ] && [ "$open_work" -eq 0 ] && [ "$specs" -gt 0 ] && [ "$(echo "$prs_json" | jq length)" -eq 0 ]; then
   ln=$(gh issue list --repo "$REPO" --label budget-ledger --state all --limit 1 --json number --jq '.[0].number')
   if [ -n "$ln" ] && ! gh api "repos/$REPO/issues/$ln/comments" --paginate --jq '.[].body' | grep -q '<!-- graph-finished -->'; then
     gh issue comment "$ln" --repo "$REPO" --body "<!-- graph-finished --> 열린 일이 없다. 총비용 \$$(bash "$GRAPH_DIR/ledger.sh" total)." >/dev/null
