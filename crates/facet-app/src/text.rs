@@ -107,6 +107,39 @@ pub fn name_error_text(error: NameError) -> String {
     }
 }
 
+/// 일괄 이름 바꾸기 미리 보기의 문제 줄에 보일 까닭.
+pub fn batch_problem_text(problem: facet_core::batch_rename::BatchProblem) -> String {
+    use facet_core::batch_rename::BatchProblem;
+    match problem {
+        BatchProblem::Invalid(error) => name_error_text(error),
+        BatchProblem::Duplicate => "겹침: 다른 항목과 바뀔 이름이 같습니다".to_owned(),
+        BatchProblem::NameTaken => {
+            "같은 이름이 있음: 폴더에 그 이름의 항목이 남아 있습니다".to_owned()
+        }
+        BatchProblem::NotUnicode => "읽을 수 없는 이름입니다".to_owned(),
+    }
+}
+
+/// 일괄 이름 바꾸기 창 아래의 수치 줄.
+pub fn batch_counts_text(renames: usize, unchanged: usize, problems: usize) -> String {
+    format!("바꿈 {renames} · 건너뜀 {unchanged} · 문제 {problems}")
+}
+
+/// 「바꾸기」가 막힌 까닭(창 아래에 보임).
+pub fn batch_error_text(error: facet_core::window::BatchRenameError) -> String {
+    match error {
+        facet_core::window::BatchRenameError::Unavailable => {
+            "지금은 일괄 이름 바꾸기를 할 수 없습니다".to_owned()
+        }
+        facet_core::window::BatchRenameError::Problems => {
+            "문제가 있는 이름을 먼저 고치세요".to_owned()
+        }
+        facet_core::window::BatchRenameError::NothingToRename => {
+            "바뀌는 이름이 없습니다".to_owned()
+        }
+    }
+}
+
 /// 이름바꾸기·새 폴더가 막히거나 실패한 까닭.
 pub fn edit_error_text(error: EditError) -> String {
     match error {
